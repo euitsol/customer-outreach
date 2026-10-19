@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill %}
+{% block title %}Email templates{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Email templates</h1>
+  <div class="sub">Reusable email texts. In a campaign's sequence use "Load template…" to drop one into a stage.</div></div>
+  <div class="page-actions"><a class="btn btn-primary" href="{{ url_for('admin.templates', edit=0) }}#editor">{{ icon('plus') }} New template</a></div></div>
+<div class="grid g-side" style="align-items:start">
+  <div class="stack">
+    {% for t in rows %}
+    <div class="card card-pad">
+      <div class="row" style="justify-content:space-between"><h3>{{ t.name }}</h3>
+        <div class="row">
+          <a class="btn btn-sm" href="{{ url_for('admin.templates', edit=t.id) }}#editor">Edit</a>
+          <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ t.id }}"><button class="btn btn-sm btn-danger" data-confirm="Delete template '{{ t.name }}'?">{{ icon('trash') }}</button></form>
+        </div></div>
+      {% if t.subject %}<div class="small mt1"><b>Subject:</b> {{ t.subject }}</div>{% endif %}
+      <div class="preview mt1" style="max-height:140px;overflow:hidden">{{ (t.body or '')|truncate(400) }}</div>
+    </div>
+    {% else %}
+    <div class="card empty"><h3>No templates yet</h3><p>Save an email you want to reuse across campaigns.</p></div>
+    {% endfor %}
+  </div>
+  <form method="post" class="card card-pad" id="editor">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="save">
+    {% if editing %}<input type="hidden" name="id" value="{{ editing.id }}">{% endif %}
+    <h2 class="mb2">{{ 'Edit template' if editing else 'New template' }}</h2>
+    <div class="stack">
+      <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ editing.name if editing else '' }}" required></label>
+      <label class="field"><span class="lbl">Subject</span><input type="text" name="subject" value="{{ editing.subject if editing and editing.subject else '' }}"></label>
+      <label class="field"><span class="lbl">Body</span><textarea name="body" rows="12" class="body-edit">{{ editing.body if editing and editing.body else '' }}</textarea>
+        <div class="hint">Merge fields: <code>{{ '{{first_name|there}}' }}</code>, <code>{{ '{{company}}' }}</code>, any imported column.</div></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Save template</button>{% if editing %}<a class="btn btn-ghost" href="{{ url_for('admin.templates') }}">Cancel</a>{% endif %}</div>
+  </form>
+</div>
+{% endblock %}

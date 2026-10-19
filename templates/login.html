@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Sign in · Outreach</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=2">
+</head>
+<body>
+<div class="login-wrap">
+  <form method="post" class="card login-card">
+    <h1 style="margin-bottom:4px">Outreach</h1>
+    <p class="muted mb2">Sign in to manage campaigns.</p>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="flash {{ cat }} mb1"><span>{{ m }}</span></div>{% endfor %}
+    {% endwith %}
+    <input type="hidden" name="next" value="{{ request.args.get('next','') }}">
+    <label class="field"><span class="lbl">Username</span><input type="text" name="username" autocomplete="username" autofocus required></label>
+    <label class="field mt1"><span class="lbl">Password</span><input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn btn-primary mt2" style="width:100%">Sign in</button>
+  </form>
+</div>
+</body>
+</html>

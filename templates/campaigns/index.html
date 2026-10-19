@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill %}
+{% block title %}Campaigns{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Campaigns</h1><div class="sub">Each campaign has its own sequence of emails, contacts and pacing.</div></div>
+  <div class="page-actions"><a class="btn btn-primary" href="{{ url_for('campaigns.new') }}">{{ icon('plus') }} New campaign</a></div>
+</div>
+
+<div class="tabs">
+  <a href="{{ url_for('campaigns.index') }}" class="{{ 'active' if not status }}">All active &amp; draft</a>
+  {% for st in STATUS_ORDER %}<a href="{{ url_for('campaigns.index', status=st) }}" class="{{ 'active' if status == st }}">{{ st|capitalize }} <span class="count">{{ counts.get(st, 0) }}</span></a>{% endfor %}
+</div>
+
+<div class="card">
+  <form class="filters" method="get">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ term }}" placeholder="Campaign name"></label>
+    <button class="btn">Search</button>
+    {% if term %}<a class="btn btn-ghost" href="{{ url_for('campaigns.index', status=status or None) }}">Clear</a>{% endif %}
+  </form>
+  {% if campaigns %}
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Campaign</th><th>Status</th><th class="num">Stages</th><th class="num">Contacts</th><th>Progress</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th><th class="num">Failed</th><th></th></tr></thead>
+    <tbody>
+    {% for c in campaigns %}{% set m = summaries.get(c.id, {}) %}{% set total = m.get('total', 0) %}
+      <tr>
+        <td><a class="primary" href="{{ url_for('campaigns.overview', cid=c.id) }}">{{ c.name }}</a>{% if c.description %}<div class="sub">{{ c.description|truncate(70) }}</div>{% endif %}</td>
+        <td>{{ pill(c.status) }}</td>
+        <td class="num">{{ m.get('steps', 0) }}</td>
+        <td class="num"><a href="{{ url_for('contacts.in_campaign', cid=c.id) }}">{{ total }}</a></td>
+        <td style="min-width:140px">
+          {% if total %}<div class="progress" title="{{ m.get('in_sequence',0) }} in sequence, {{ m.get('finished',0) }} finished, {{ m.get('replied',0) }} replied">
+            <i class="p-sent" style="width:{{ ((m.get('in_sequence',0)+m.get('finished',0)) / total * 100)|round(1) }}%"></i>
+            <i class="p-replied" style="width:{{ (m.get('replied',0) / total * 100)|round(1) }}%"></i></div>
+          <div class="sub">{{ m.get('ready',0) }} ready</div>{% else %}<span class="faint">no contacts</span>{% endif %}
+        </td>
+        <td class="num">{{ m.get('sent', 0) }}</td>
+        <td class="num">{{ m.get('open_rate', 0) }}%</td>
+        <td class="num">{{ m.get('replied', 0) }}</td>
+        <td class="num">{% if m.get('failed') %}<a href="{{ url_for('outbox.in_campaign', cid=c.id, view='failed') }}" style="color:var(--bad)">{{ m.failed }}</a>{% else %}0{% endif %}</td>
+        <td class="right nowrap">
+          {% if c.status == 'active' %}
+          <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="pause"><input type="hidden" name="next" value="/campaigns"><button class="btn btn-sm">{{ icon('pause') }} Pause</button></form>
+          {% elif c.status != 'archived' %}
+          <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="start"><input type="hidden" name="next" value="/campaigns"><button class="btn btn-sm btn-good" data-confirm="Start sending for '{{ c.name }}'?">{{ icon('play') }} Start</button></form>
+          {% endif %}
+          <a class="btn btn-sm" href="{{ url_for('campaigns.sequence', cid=c.id) }}">Edit</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <div class="empty"><h3>{{ 'No campaigns match' if (term or status) else 'No campaigns yet' }}</h3><p>A campaign holds a sequence of emails (first email + follow-ups) and the contacts to send them to.</p><a class="btn btn-primary" href="{{ url_for('campaigns.new') }}">Create a campaign</a></div>
+  {% endif %}
+</div>
+{% endblock %}

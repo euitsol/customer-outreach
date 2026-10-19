@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager %}
+{% block title %}Outbox{% endblock %}
+{% block content %}
+{% if scoped %}
+  {% include "campaigns/_head.html" %}
+{% else %}
+<div class="page-head"><div><h1>Outbox</h1><div class="sub">What's scheduled, queued and failed across your campaigns.</div></div></div>
+{% endif %}
+
+{% set base_url = url_for('outbox.in_campaign', cid=c.id) if scoped else url_for('outbox.index') %}
+{% set args = request.args %}
+<div class="tabs">
+  <a href="{{ base_url }}?{{ qs(args, ['view','page'], view='upcoming') }}" class="{{ 'active' if view == 'upcoming' }}">Scheduled <span class="count">{{ counts.upcoming }}</span></a>
+  <a href="{{ base_url }}?{{ qs(args, ['view','page'], view='queued') }}" class="{{ 'active' if view == 'queued' }}">Queued to send now <span class="count">{{ counts.queued }}</span></a>
+  <a href="{{ base_url }}?{{ qs(args, ['view','page'], view='failed') }}" class="{{ 'active' if view == 'failed' }}">Failed <span class="count {{ 'bad' if counts.failed }}">{{ counts.failed }}</span></a>
+</div>
+
+{% if view == 'failed' and counts.failed %}
+<div class="banner">Failed emails retry automatically up to <b>{{ max_attempts }}</b> times with a growing pause. After that they wait here for you: retry or skip them.</div>
+{% endif %}
+
+<div class="card">
+  <form class="filters" method="get" action="{{ base_url }}" data-autosubmit>
+    <input type="hidden" name="view" value="{{ view }}">
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ term }}" placeholder="Email or company"></label>
+    {% if not scoped %}<label class="field"><span class="lbl">Campaign</span>
+      <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if cid == cp.id }}>{{ cp.name }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Stage</span>
+      <select name="stage"><option value="">All stages</option>{% for i in range(1, 9) %}<option value="{{ i }}" {{ 'selected' if stage == i }}>Stage {{ i }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Apply</button><a class="btn btn-ghost" href="{{ base_url }}?view={{ view }}">Reset</a>
+  </form>
+
+  {% if rows %}
+  <form method="post" action="{{ url_for('outbox.action') }}" id="bulk-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr>
+        {% if view != 'upcoming' %}<th class="check"><input type="checkbox" id="check-all"></th>{% endif %}
+        <th>Contact</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th>
+        {% if view == 'upcoming' %}<th>Scheduled</th><th></th>
+        {% elif view == 'queued' %}<th>State</th><th>Queued</th>
+        {% else %}<th>Error</th><th class="num">Attempts</th><th>Next auto-retry</th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}{% set ct = r.contact %}
+        <tr>
+          {% if view != 'upcoming' %}<td class="check"><input type="checkbox" class="row-check" name="ids" value="{{ r.msg.id }}"></td>{% endif %}
+          <td><a class="primary" href="{{ url_for('contacts.detail', contact_id=ct.id) }}">{{ ct.email }}</a><div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
+          {% if not scoped %}<td>{{ r.camp.name }}</td>{% endif %}
+          <td class="nowrap">{% if r.step %}{{ r.step.position }}. {{ r.step.name }}{% endif %}</td>
+          {% if view == 'upcoming' %}
+            <td class="nowrap">{{ pill('due' if (not r.due or r.due <= now) else 'scheduled', 'Now' if not r.due else (r.due|dt)) }} <span class="muted small">{{ r.due|when if r.due and r.due > now }}</span></td>
+            <td class="right"><a class="btn btn-sm" href="{{ url_for('contacts.detail', contact_id=ct.id) }}#stage-{{ r.step.position if r.step else 1 }}">Edit</a></td>
+          {% elif view == 'queued' %}
+            <td>{{ pill(r.msg.status) }}</td><td class="muted">{{ r.msg.updated_at|ago }}</td>
+          {% else %}
+            <td style="max-width:420px"><span class="small" style="color:var(--bad)">{{ (r.msg.last_error or '')|truncate(160) }}</span></td>
+            <td class="num">{{ r.msg.attempts }}/{{ max_attempts }}</td>
+            <td class="muted">{% if r.msg.next_attempt_at and r.msg.attempts < max_attempts %}{{ r.msg.next_attempt_at|ago }}{% else %}manual retry needed{% endif %}</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {{ pager(page, args, base_url) }}
+    {% if view != 'upcoming' %}
+    <div class="bulkbar hidden" id="bulkbar">
+      <b><span id="sel-count">0</span> selected</b>
+      {% if view == 'failed' %}<button class="btn btn-sm" name="action" value="retry">{{ icon('refresh') }} Retry now</button>
+      <button class="btn btn-sm" name="action" value="skip" data-confirm="Skip these stages? The contacts move on to their next stage.">Skip stage</button>{% else %}
+      <button class="btn btn-sm" name="action" value="cancel">Cancel send</button>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+  {% else %}
+  <div class="empty"><h3>{{ {'upcoming': 'Nothing scheduled', 'queued': 'Nothing queued', 'failed': 'No failed emails'}[view] }}</h3>
+    <p>{{ {'upcoming': 'Start a campaign with ready contacts to see what the worker will send next.', 'queued': 'Use "Send now" on a contact or stage to queue an email ahead of schedule.', 'failed': 'Everything that was attempted has been delivered.'}[view] }}</p></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager %}
+{% block title %}Contacts{% endblock %}
+{% block content %}
+{% if scoped %}
+  {% include "campaigns/_head.html" %}
+{% else %}
+<div class="page-head">
+  <div><h1>Contacts</h1><div class="sub">Every person across all campaigns.</div></div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('contacts.export') }}?{{ qs(request.args, ['page']) }}">{{ icon('download') }} Export</a>
+    <a class="btn" href="{{ url_for('imports.upload') }}">{{ icon('upload') }} Import</a>
+    <a class="btn btn-primary" href="{{ url_for('contacts.new') }}">{{ icon('plus') }} Add contact</a>
+  </div>
+</div>
+{% endif %}
+
+{% set base_url = url_for('contacts.in_campaign', cid=c.id) if scoped else url_for('contacts.index') %}
+{% set args = request.args %}
+<div class="card" data-bulk-scope>
+  <form class="filters" method="get" action="{{ base_url }}" data-autosubmit>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email, name, company, phone, notes"></label>
+    {% if not scoped %}
+    <label class="field"><span class="lbl">Campaign</span>
+      <select name="campaign"><option value="">All campaigns</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign')|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    {% endif %}
+    <label class="field"><span class="lbl">Status</span>
+      <select name="status"><option value="">Any status</option>
+        {% for k, label in [('ready','Ready (not started)'),('in_sequence','In sequence'),('finished','Finished sequence'),('due','Due to send now'),('scheduled','Scheduled for later'),('queued','Queued to send'),('failed','Has failed email'),('replied','Replied'),('unsubscribed','Unsubscribed'),('bounced','Bounced'),('verify','Needs verification'),('paused','Paused'),('suppressed','On do-not-contact list')] %}
+        <option value="{{ k }}" {{ 'selected' if args.get('status') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Stage reached</span>
+      <select name="stage"><option value="">Any</option><option value="0" {{ 'selected' if args.get('stage') == '0' }}>Not started</option>
+        {% for i in range(1, 9) %}<option value="{{ i }}" {{ 'selected' if args.get('stage') == i|string }}>Stage {{ i }} sent</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Engagement</span>
+      <select name="engagement"><option value="">Any</option>
+        {% for k, label in [('opened','Opened'),('not_opened','Sent, not opened'),('clicked','Clicked a link'),('no_activity','No opens or clicks')] %}<option value="{{ k }}" {{ 'selected' if args.get('engagement') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Tag</span>
+      <select name="tag"><option value="">Any tag</option><option value="__none__" {{ 'selected' if args.get('tag') == '__none__' }}>No tags</option>{% for t in all_tags %}<option value="{{ t }}" {{ 'selected' if args.get('tag') == t }}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Own email text</span>
+      <select name="custom"><option value="">Any</option><option value="1" {{ 'selected' if args.get('custom') == '1' }}>Customised</option><option value="0" {{ 'selected' if args.get('custom') == '0' }}>Template only</option></select></label>
+    {% if priorities %}<label class="field"><span class="lbl">Priority</span>
+      <select name="priority"><option value="">Any</option>{% for p in priorities %}<option value="{{ p }}" {{ 'selected' if args.get('priority') == p }}>{{ p|capitalize }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Added from</span><input type="date" name="from" value="{{ args.get('from','') }}"></label>
+    <label class="field"><span class="lbl">to</span><input type="date" name="to" value="{{ args.get('to','') }}"></label>
+    <label class="field"><span class="lbl">Sort</span>
+      <select name="sort">{% for k, label in [('newest','Newest first'),('oldest','Oldest first'),('email','Email A-Z'),('company','Company A-Z'),('name','Name A-Z'),('stage','Furthest stage'),('due','Next send soonest'),('last_step','Recently emailed')] %}<option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Per page</span>
+      <select name="per_page">{% for n in [25, 50, 100, 250] %}<option value="{{ n }}" {{ 'selected' if page.per_page == n }}>{{ n }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Apply</button>
+    <a class="btn btn-ghost" href="{{ base_url }}">Reset</a>
+  </form>
+
+  <div class="results-bar">
+    <b>{{ page.total }}</b> contact{{ 's' if page.total != 1 }}
+    {% if args.get('q') or args.get('status') or args.get('tag') or args.get('engagement') or args.get('stage') or args.get('custom') %}matching filters{% endif %}
+    {% if scoped %}<span class="grow"></span><a href="{{ url_for('contacts.export') }}?{{ qs(args, ['page'], campaign=c.id) }}">{{ icon('download') }} Export these</a>{% endif %}
+  </div>
+
+  <form id="bulk-form" method="post" action="{{ url_for('contacts.bulk') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+    <input type="hidden" name="qs" value="{{ query_string }}">
+    {% if scoped %}<input type="hidden" name="scope_campaign" value="{{ c.id }}">{% endif %}
+    <input type="hidden" name="select_all" id="select_all_field" value="0">
+    <div class="selectall-note hidden" id="selectall-note" data-more="{{ '1' if page.total > page.items|length else '' }}">
+      All {{ page.items|length }} contacts on this page are selected.
+      <a href="#" id="pick-all-matching" data-total="{{ page.total }}">Select all {{ page.total }} matching contacts</a>
+    </div>
+
+    {% if page.items %}
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr>
+        <th class="check"><input type="checkbox" id="check-all" aria-label="Select all"></th>
+        <th>Contact</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Tags</th><th>Progress</th><th>Status</th>
+        <th class="num">Sent</th><th class="num">Opens</th><th class="num">Clicks</th><th>Last sent</th><th>Next send</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for ct in page.items %}
+        {% set m = metrics[ct.id] %}{% set ns = nsteps.get(ct.campaign_id, 0) %}{% set st = contact_status(ct, ns) %}
+        <tr>
+          <td class="check"><input type="checkbox" class="row-check" name="ids" value="{{ ct.id }}"></td>
+          <td><a class="primary" href="{{ url_for('contacts.detail', contact_id=ct.id) }}">{{ ct.email }}</a>
+            <div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
+          {% if not scoped %}<td class="nowrap"><a href="{{ url_for('campaigns.overview', cid=ct.campaign_id) }}" title="{{ camp_names.get(ct.campaign_id, '') }}">{{ camp_names.get(ct.campaign_id, '')|truncate(24) }}</a></td>{% endif %}
+          <td>{% for t in tag_rows.get(ct.id, []) %}<a class="tag tag-link" href="{{ base_url }}?tag={{ t|urlencode }}">{{ t }}</a>{% endfor %}</td>
+          <td class="nowrap">{{ ct.stage or 0 }}/{{ ns }}
+            {% if ns %}<span class="mini-bar" style="width:{{ ((ct.stage or 0) / ns * 44)|round }}px"></span>{% endif %}</td>
+          <td>{{ pill(st) }}{% if m.queued %} {{ pill('queued') }}{% endif %}{% if m.failed %} <span class="pill failed">{{ m.failed }} failed</span>{% endif %}</td>
+          <td class="num">{{ m.sent }}</td><td class="num">{{ m.opens }}</td><td class="num">{{ m.clicks }}</td>
+          <td class="nowrap muted">{{ m.last_sent|ago if m.last_sent else '-' }}</td>
+          <td class="nowrap">{% if st in ('ready','in_sequence') %}{{ ct.next_due_at|when if ct.next_due_at else 'Now' }}{% else %}<span class="faint">-</span>{% endif %}</td>
+          <td class="right"><a class="btn btn-sm" href="{{ url_for('contacts.detail', contact_id=ct.id) }}">Open</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {{ pager(page, args, base_url) }}
+
+    <div class="bulkbar hidden" id="bulkbar">
+      <b><span id="sel-count">0</span> selected</b>
+      <button class="btn btn-sm" name="action" value="queue" data-confirm="Send the next email to the selected contacts as soon as the worker can (still paced by your delay settings)?">Send next now</button>
+      <button class="btn btn-sm" name="action" value="retry">Retry failed</button>
+      <button class="btn btn-sm" name="action" value="unqueue">Cancel queued</button>
+      <span class="sep"></span>
+      <input type="text" name="tags" id="bulk-tags" list="tag-list" placeholder="tag1, tag2" style="max-width:150px">
+      <datalist id="tag-list">{% for t in all_tags %}<option value="{{ t }}">{% endfor %}</datalist>
+      <button class="btn btn-sm" name="action" value="add_tags" data-needs="#bulk-tags">Add tag</button>
+      <button class="btn btn-sm" name="action" value="remove_tags" data-needs="#bulk-tags">Remove tag</button>
+      <span class="sep"></span>
+      <input type="datetime-local" name="due_at" style="max-width:195px" title="Send date for each contact's next email ({{ s.timezone }})">
+      <button class="btn btn-sm" name="action" value="reschedule" title="Empty date = clear the custom date">Set next send date</button>
+      <span class="sep"></span>
+      <select name="campaign_id" style="max-width:190px"><option value="">Move to campaign…</option>{% for cp in campaigns %}<option value="{{ cp.id }}">{{ cp.name }}</option>{% endfor %}</select>
+      <button class="btn btn-sm" name="action" value="move" data-confirm="Moving restarts the sequence in the new campaign (custom text is kept by stage number). Continue?">Move</button>
+      <span class="sep"></span>
+      <button class="btn btn-sm" name="action" value="disable">Pause</button>
+      <button class="btn btn-sm" name="action" value="enable">Resume</button>
+      <button class="btn btn-sm" name="action" value="unverify">Needs verification</button>
+      <button class="btn btn-sm" name="action" value="verify">Mark verified</button>
+      <button class="btn btn-sm" name="action" value="reset" data-confirm="Restart the sequence from stage 1 for these contacts? They will be emailed again from the beginning.">Restart sequence</button>
+      <button class="btn btn-sm" name="action" value="suppress">Add to do-not-contact</button>
+      <button class="btn btn-sm" name="action" value="export">Export</button>
+      <button class="btn btn-sm btn-danger" name="action" value="delete" data-confirm="Permanently delete the selected contacts and their history?">Delete</button>
+    </div>
+    {% else %}
+    <div class="empty">
+      <h3>No contacts found</h3>
+      <p>{{ 'Try removing some filters.' if args else 'Import a spreadsheet or add contacts one by one.' }}</p>
+      {% if not args %}<a class="btn btn-primary" href="{{ url_for('imports.upload', campaign=c.id if scoped else None) }}">Import contacts</a>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

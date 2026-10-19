@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Import contacts{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Import contacts &amp; personalised emails</h1>
+  <div class="sub">Upload a CSV or Excel sheet. You'll map its columns and preview the result before anything is saved.</div></div></div>
+
+<div class="grid g-side">
+  <form method="post" enctype="multipart/form-data" class="card card-pad">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="stack">
+      <label class="field"><span class="lbl">1. File (.csv, .xlsx)</span><input type="file" name="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm" required></label>
+      <div class="field"><span class="lbl">2. Campaign</span>
+        <select name="campaign_id"><option value="">+ Create a new campaign…</option>
+          {% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if (selected or form.get('campaign_id')|int(0)) == cp.id }}>{{ cp.name }}</option>{% endfor %}</select>
+        <input type="text" name="new_name" class="mt1" placeholder="New campaign name (only if creating one)" value="{{ form.get('new_name','') }}">
+      </div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Continue to column mapping</button></div>
+  </form>
+
+  <div class="card card-pad">
+    <h2 class="mb1">What the file can contain</h2>
+    <ul class="small" style="padding-left:18px;margin:0">
+      <li><b>email</b> is the only required column.</li>
+      <li>Contact details: first name, last name, company, phone, priority, tags, notes.</li>
+      <li><b>Personalised emails</b>: a subject, body and send date <i>per stage</i> (<code>stage1_body</code>, <code>stage2_body</code>, <code>stage2_date</code>…). Anything left blank uses the campaign template.</li>
+      <li>Any other column becomes a merge field, e.g. a <code>website</code> column is usable as <code>{{ '{{website}}' }}</code>.</li>
+      <li>Handles sheets with title rows above the header, and older column names like "Email 1", "Follow-up 1", "Subject line".</li>
+    </ul>
+    <a class="btn btn-sm mt2" href="{{ url_for('imports.template') }}">{{ icon('download') }} Download example CSV</a>
+  </div>
+</div>
+{% endblock %}

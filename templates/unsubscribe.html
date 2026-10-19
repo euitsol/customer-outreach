@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Unsubscribe</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=2">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="card login-card center">
+    {% if done %}
+      <h1 style="margin-bottom:8px">You're unsubscribed</h1>
+      <p class="muted">You won't receive any further emails from us. Sorry to see you go.</p>
+    {% else %}
+      <h1 style="margin-bottom:8px">Unsubscribe?</h1>
+      <p class="muted mb2">Confirm that you no longer want to receive emails from us.</p>
+      <form method="post" action="{{ url_for('tracking.unsubscribe', token=token) }}">
+        <button class="btn btn-primary" style="width:100%">Yes, unsubscribe me</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

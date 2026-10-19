@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   db:
     image: postgres:16
@@ -9,32 +8,46 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mailcampaign -d mailcampaign"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   web:
     build: .
     restart: unless-stopped
-    command: gunicorn -w 2 -b 0.0.0.0:8000 app.web:app
+    command: gunicorn -w 2 --timeout 120 -b 0.0.0.0:8000 app.web:app
     env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     ports:
       - "127.0.0.1:8091:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   worker:
     build: .
     restart: unless-stopped
     command: python -m app.worker
     env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   reply_checker:
     build: .
     restart: unless-stopped
     command: python -m app.reply_checker
     env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

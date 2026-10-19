@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill %}
+{% block title %}{{ c.email }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('contacts.index') }}">Contacts</a> / <a href="{{ url_for('contacts.in_campaign', cid=camp.id) }}">{{ camp.name }}</a> / {{ c.email }}</div>
+<div class="page-head">
+  <div>
+    <h1>{{ c.full_name or c.email }} {{ pill(status) }}</h1>
+    <div class="sub">{{ c.email }}{% if c.company %} · {{ c.company }}{% endif %} · in <a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a> ({{ pill(camp.status) }})</div>
+  </div>
+  <div class="page-actions">
+    <form method="post" action="{{ url_for('contacts.reset', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" data-confirm="Restart this contact's sequence from stage 1? They will be emailed from the beginning.">{{ icon('refresh') }} Restart sequence</button></form>
+    <form method="post" action="{{ url_for('contacts.delete', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-danger" data-confirm="Delete this contact and all their history?">{{ icon('trash') }} Delete</button></form>
+  </div>
+</div>
+
+{% if status in ('bounced','unsubscribed','replied','verify','paused') %}
+<div class="banner">
+  {% if status == 'bounced' %}This address <b>bounced</b>; no more emails will be sent. {% elif status == 'unsubscribed' %}This contact <b>unsubscribed</b>; no more emails will be sent. {% elif status == 'replied' %}This contact <b>replied</b>, so the automatic sequence stopped. {% elif status == 'verify' %}This address is flagged <b>needs verification</b>, so it's skipped until you clear the flag. {% else %}Sending is <b>paused</b> for this contact. {% endif %}
+  {% if status in ('bounced','unsubscribed','replied') %}
+  <form method="post" action="{{ url_for('contacts.flag', contact_id=c.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ status if status != 'unsubscribed' else 'unsubscribed' }}"><input type="hidden" name="value" value="0"><button class="btn btn-sm">Clear {{ status }} flag</button></form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid" style="grid-template-columns:minmax(0,2fr) minmax(300px,1fr);align-items:start">
+  <div>
+    <div class="row mb2" style="justify-content:space-between">
+      <h2>Emails in sequence <span class="muted small">({{ c.stage or 0 }} of {{ nsteps }} sent)</span></h2>
+    </div>
+    {% for r in rows %}{% set st = r.step %}{% set m = r.msg %}
+    <section class="stage-card" id="stage-{{ st.position }}">
+      <div class="stage-top">
+        <span class="stage-num">{{ st.position }}</span>
+        <b>{{ st.name }}</b>
+        {{ pill(r.state) }}
+        {% if r.custom %}<span class="pill replied nodot">custom text</span>{% endif %}
+        <span class="grow"></span>
+        <span class="muted small">
+          {% if r.state == 'sent' %}sent {{ m.sent_at|dt }}
+          {% elif r.state == 'failed' %}failed ({{ m.attempts }}/{{ s.retry_max }} attempts){% if m.next_attempt_at and m.attempts < s.retry_max %} · auto-retry {{ m.next_attempt_at|ago }}{% endif %}
+          {% elif r.state in ('due','scheduled') %}{{ 'due now' if r.state == 'due' else 'scheduled ' ~ (r.due|dt) }}
+          {% elif r.state == 'upcoming' %}waits {{ st.delay_hours|delay }} after stage {{ st.position - 1 }}{% endif %}
+        </span>
+      </div>
+      <div class="stage-body">
+        {% if r.state == 'failed' and m.last_error %}<div class="flash err mb2"><span><b>Error:</b> {{ m.last_error }}</span></div>{% endif %}
+
+        {% if r.state == 'sent' %}
+          <div class="preview"><div class="subj">{{ m.sent_subject or r.subject }}</div>{{ m.sent_body or r.body }}</div>
+          <div class="row mt2">
+            <a class="btn btn-sm" href="{{ url_for('outbox.message_view', mid=m.id) }}">Open sent copy</a>
+            <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="resend"><button class="btn btn-sm" data-confirm="Send this email to {{ c.email }} again?">Send again</button></form>
+          </div>
+        {% else %}
+          <form method="post" action="{{ url_for('contacts.stage_save', contact_id=c.id, step_id=st.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-grid">
+              <label class="field full"><span class="lbl">Subject for this person <span class="faint">(blank = {{ 'campaign subject' if st.position == 1 or st.subject else 'reply in the same thread' }})</span></span>
+                <input type="text" name="subject" class="subject-edit" value="{{ m.subject if m and m.subject else '' }}" placeholder="{{ st.subject or '' }}"></label>
+              <label class="field full"><span class="lbl">Email body for this person <span class="faint">(blank = use the campaign template)</span></span>
+                <textarea name="body" class="body-edit" rows="7" placeholder="{{ (st.body or '')|truncate(300) }}">{{ m.body if m and m.body else '' }}</textarea></label>
+              <label class="field"><span class="lbl">Send on / after <span class="faint">({{ s.timezone }})</span></span>
+                <input type="datetime-local" name="due_at" value="{{ due_input(m.due_at, s) if m and m.due_at else '' }}">
+                <div class="hint">Empty = {{ st.delay_hours|delay }} after the previous stage.</div></label>
+            </div>
+            <div class="form-actions" style="margin-top:12px">
+              <button class="btn btn-primary btn-sm">Save</button>
+              <span class="muted small">What they'll receive:</span>
+            </div>
+          </form>
+          <div class="preview mt1"><div class="subj">{{ r.subject or '(no subject)' }}</div>{{ r.body or '(empty - write a body or fill the campaign template)' }}</div>
+          <div class="row mt2">
+            {% if r.state == 'queued' %}
+              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-sm">Cancel queued send</button></form>
+            {% elif r.state == 'skipped' %}
+              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reopen"><button class="btn btn-sm">Re-open stage</button></form>
+            {% else %}
+              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="{{ 'retry' if r.state == 'failed' else 'send_now' }}"><button class="btn btn-sm btn-primary" data-confirm="Send stage {{ st.position }} to {{ c.email }} now (skips the wait; still paced by your delay and daily limit)?">{{ icon('send') }} {{ 'Retry now' if r.state == 'failed' else 'Send now' }}</button></form>
+              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="skip"><button class="btn btn-sm" data-confirm="Skip stage {{ st.position }} for this contact?">Skip stage</button></form>
+            {% endif %}
+            {% if r.custom or (m and m.due_at) %}
+              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="clear_custom"><button class="btn btn-sm btn-ghost">Clear custom text &amp; date</button></form>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </section>
+    {% else %}
+    <div class="card empty"><h3>This campaign has no stages</h3><a class="btn btn-primary" href="{{ url_for('campaigns.sequence', cid=camp.id) }}">Add stages</a></div>
+    {% endfor %}
+  </div>
+
+  <div class="stack">
+    <form method="post" action="{{ url_for('contacts.edit', contact_id=c.id) }}" class="card card-pad">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h2 class="mb2">Profile</h2>
+      <div class="stack">
+        <label class="field"><span class="lbl">Email</span><input type="email" name="email" value="{{ c.email }}" required></label>
+        <div class="row"><label class="field grow"><span class="lbl">First name</span><input type="text" name="first_name" value="{{ c.first_name or '' }}"></label>
+          <label class="field grow"><span class="lbl">Last name</span><input type="text" name="last_name" value="{{ c.last_name or '' }}"></label></div>
+        <label class="field"><span class="lbl">Company</span><input type="text" name="company" value="{{ c.company or '' }}"></label>
+        <div class="row"><label class="field grow"><span class="lbl">Phone</span><input type="text" name="phone" value="{{ c.phone or '' }}"></label>
+          <label class="field grow"><span class="lbl">Priority</span><input type="text" name="priority" value="{{ c.priority or '' }}"></label></div>
+        <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ tags }}" placeholder="comma separated"></label>
+        <label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="3">{{ c.notes or '' }}</textarea></label>
+        <label class="field"><span class="lbl">Merge fields</span><textarea name="custom" rows="4" placeholder="website: https://...">{{ custom_text }}</textarea><div class="hint">Use as <code>{{ '{{name}}' }}</code> in emails.</div></label>
+        <label class="check"><input type="checkbox" name="send_flag" value="1" {{ 'checked' if c.send_flag }}><span>Sending enabled <div class="hint">Untick to pause just this contact.</div></span></label>
+        <label class="check"><input type="checkbox" name="needs_verification" value="1" {{ 'checked' if c.needs_verification }}><span>Needs email verification <div class="hint">Blocks sending until cleared.</div></span></label>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary">Save profile</button></div>
+    </form>
+
+    <div class="card card-pad">
+      <h2 class="mb1">Status flags</h2>
+      <div class="row">
+        {% for name, label in [('replied','Replied'),('unsubscribed','Unsubscribed'),('bounced','Bounced')] %}
+        <form method="post" action="{{ url_for('contacts.flag', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="value" value="{{ '0' if c[name] else '1' }}">
+          <button class="btn btn-sm {{ 'btn-primary' if c[name] }}">{{ '✓ ' if c[name] }}{{ label }}</button></form>
+        {% endfor %}
+      </div>
+      <p class="hint">Click to toggle. Replied / unsubscribed / bounced stop the automatic sequence.</p>
+      <dl class="kv mt2">
+        <dt>Sent</dt><dd>{{ metrics.sent }} emails</dd>
+        <dt>Opens</dt><dd>{{ metrics.opens }}</dd>
+        <dt>Clicks</dt><dd>{{ metrics.clicks }}</dd>
+        <dt>Added</dt><dd>{{ c.created_at|day }}</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Timeline</h2></div>
+      <ul class="timeline" style="padding:0 18px">
+        {% for ev in events %}
+        <li><span class="pill {{ ev.type }}">{{ ev.type }}</span><span>{% if ev.stage %}stage {{ ev.stage }}{% endif %}{% if ev.type in ('failed','bounced') and ev.detail %}<div class="small muted">{{ ev.detail|truncate(110) }}</div>{% endif %}</span><time title="{{ ev.created_at|dt }}">{{ ev.created_at|ago }}</time></li>
+        {% else %}<li class="muted">No activity yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

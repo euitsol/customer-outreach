@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}New campaign{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('campaigns.index') }}">Campaigns</a> / New</div>
+<div class="page-head"><div><h1>New campaign</h1><div class="sub">You'll write the emails and import contacts next.</div></div></div>
+<form method="post" class="card card-pad" style="max-width:640px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="stack">
+    <label class="field"><span class="lbl">Campaign name</span><input type="text" name="name" value="{{ form.get('name','') }}" placeholder="e.g. Ireland Hospitality - Oct 2026" required autofocus></label>
+    <label class="field"><span class="lbl">Description <span class="faint">(optional)</span></span><textarea name="description" rows="2" placeholder="Who is this for and what are you offering?">{{ form.get('description','') }}</textarea></label>
+    <label class="field"><span class="lbl">Start from</span>
+      <select name="clone_from">
+        <option value="">Blank: 3 stages (first email + 2 follow-ups)</option>
+        {% for o in others %}<option value="{{ o.id }}">Copy the emails of "{{ o.name }}"</option>{% endfor %}
+      </select>
+      <div class="hint">You can add, remove and re-order stages at any time before they are sent.</div>
+    </label>
+  </div>
+  <div class="form-actions"><button class="btn btn-primary">Create and edit emails</button><a class="btn btn-ghost" href="{{ url_for('campaigns.index') }}">Cancel</a></div>
+</form>
+{% endblock %}

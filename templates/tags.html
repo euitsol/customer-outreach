@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Tags{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Tags</h1><div class="sub">Labels for slicing your contacts. Add them in bulk from the Contacts page or via the CSV import.</div></div></div>
+<div class="card" style="max-width:760px">
+  {% if rows %}
+  <table class="tbl"><thead><tr><th>Tag</th><th class="num">Contacts</th><th>Rename / merge</th><th></th></tr></thead>
+  <tbody>
+  {% for t, n in rows %}
+    <tr>
+      <td><a class="tag tag-link" style="font-size:13px" href="{{ url_for('contacts.index', tag=t.name) }}">{{ t.name }}</a></td>
+      <td class="num">{{ n }}</td>
+      <td><form method="post" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="rename"><input type="hidden" name="tag_id" value="{{ t.id }}">
+        <input type="text" name="name" value="{{ t.name }}" class="input-sm" style="max-width:200px"><button class="btn btn-sm">Save</button></form></td>
+      <td class="right"><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="tag_id" value="{{ t.id }}"><button class="btn btn-sm btn-danger" data-confirm="Delete the tag '{{ t.name }}'? Contacts keep existing.">{{ icon('trash') }}</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody></table>
+  <div class="card-body small muted">Renaming a tag to the name of another tag merges them.</div>
+  {% else %}<div class="empty"><h3>No tags yet</h3><p>Select contacts and use "Add tag" to create one.</p></div>{% endif %}
+</div>
+{% endblock %}

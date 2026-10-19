@@ -1,0 +1,57 @@
+{% from "_macros.html" import icon, csrf_field %}
+{% set nav = nav_counts() %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{ csrf_token() }}">
+<meta name="robots" content="noindex,nofollow">
+<title>{% block title %}Outreach{% endblock %} · Outreach</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=2">
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<div class="topbar-mobile"><button id="nav-toggle" aria-label="Menu">&#9776;</button><b>Outreach</b></div>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span class="brand-mark">{{ icon('mail') }}</span> Outreach</div>
+    <nav class="nav">
+      {% set ep = request.endpoint or '' %}
+      <a href="{{ url_for('dashboard.index') }}" class="{{ 'active' if ep == 'dashboard.index' }}">{{ icon('home') }} Dashboard</a>
+      <div class="nav-label">Work</div>
+      <a href="{{ url_for('campaigns.index') }}" class="{{ 'active' if ep.startswith('campaigns.') or (ep in ('contacts.in_campaign','outbox.in_campaign')) }}">{{ icon('send') }} Campaigns</a>
+      <a href="{{ url_for('contacts.index') }}" class="{{ 'active' if ep.startswith('contacts.') and ep != 'contacts.in_campaign' }}">{{ icon('users') }} Contacts</a>
+      <a href="{{ url_for('imports.upload') }}" class="{{ 'active' if ep.startswith('imports.') }}">{{ icon('upload') }} Import</a>
+      <a href="{{ url_for('outbox.index') }}" class="{{ 'active' if ep in ('outbox.index','outbox.action') }}">{{ icon('inbox') }} Outbox
+        {% if nav.failed %}<span class="count bad" title="Failed emails">{{ nav.failed }}</span>{% elif nav.queued %}<span class="count">{{ nav.queued }}</span>{% endif %}</a>
+      <a href="{{ url_for('outbox.activity') }}" class="{{ 'active' if ep.startswith('outbox.activity') }}">{{ icon('activity') }} Activity log</a>
+      <div class="nav-label">Library</div>
+      <a href="{{ url_for('admin.templates') }}" class="{{ 'active' if ep.startswith('admin.templ') }}">{{ icon('file') }} Email templates</a>
+      <a href="{{ url_for('admin.tags') }}" class="{{ 'active' if ep == 'admin.tags' }}">{{ icon('tag') }} Tags</a>
+      <a href="{{ url_for('admin.suppression') }}" class="{{ 'active' if ep == 'admin.suppression' }}">{{ icon('ban') }} Do not contact</a>
+      <div class="nav-label">System</div>
+      <a href="{{ url_for('admin.settings') }}" class="{{ 'active' if ep.startswith('admin.settings') or ep.startswith('admin.test_') }}">{{ icon('cog') }} Settings
+        {% if nav.paused %}<span class="count bad">paused</span>{% endif %}</a>
+    </nav>
+    <div class="side-foot">
+      <div class="row" style="justify-content:space-between">
+        <button class="btn btn-ghost btn-sm" id="theme-toggle" style="color:var(--side-text)" type="button">{{ icon('moon') }} Theme</button>
+        {% if auth_enabled %}<a href="{{ url_for('admin.logout') }}" title="Sign out">{{ icon('logout') }}</a>{% endif %}
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    {% if not auth_enabled %}
+    <div class="banner"><b>No login configured.</b> Anyone who knows this address can use the panel. Set <code>ADMIN_PASSWORD</code> in <code>.env</code> and redeploy to protect it.</div>
+    {% endif %}
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}<div class="flashes">{% for cat, m in msgs %}<div class="flash {{ cat }}"><span>{{ m }}</span><button type="button" aria-label="Dismiss">&times;</button></div>{% endfor %}</div>{% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="{{ url_for('static', filename='app.js') }}?v=2"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

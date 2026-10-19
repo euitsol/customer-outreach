@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager %}
+{% block title %}Activity log{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head">
+  <div><h1>Activity log</h1><div class="sub">Every send, open, click, reply, bounce and failure.</div></div>
+  <div class="page-actions"><a class="btn" href="{{ url_for('outbox.activity_export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export CSV</a></div>
+</div>
+<div class="card">
+  <form class="filters" method="get" data-autosubmit>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email or company"></label>
+    <label class="field"><span class="lbl">Campaign</span>
+      <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign')|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Event</span>
+      <select name="type"><option value="">All events</option>{% for k, label in event_types %}<option value="{{ k }}" {{ 'selected' if k in selected_types }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Stage</span>
+      <select name="stage"><option value="">All</option>{% for i in range(1, 9) %}<option value="{{ i }}" {{ 'selected' if args.get('stage') == i|string }}>Stage {{ i }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">From</span><input type="date" name="from" value="{{ args.get('from','') }}"></label>
+    <label class="field"><span class="lbl">To</span><input type="date" name="to" value="{{ args.get('to','') }}"></label>
+    <button class="btn btn-primary">Apply</button><a class="btn btn-ghost" href="{{ url_for('outbox.activity') }}">Reset</a>
+  </form>
+  {% if page.items %}
+  <div class="table-wrap"><table class="tbl tbl-compact">
+    <thead><tr><th>When</th><th>Event</th><th>Contact</th><th>Campaign</th><th>Stage</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for ev, c, camp in page.items %}
+      <tr>
+        <td class="nowrap" title="{{ ev.created_at|ago }}">{{ ev.created_at|dt }}</td>
+        <td>{{ pill(ev.type) }}</td>
+        <td><a class="primary" href="{{ url_for('contacts.detail', contact_id=c.id) }}">{{ c.email }}</a>{% if c.company %}<div class="sub">{{ c.company }}</div>{% endif %}</td>
+        <td><a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a></td>
+        <td>{{ ev.stage or '' }}</td>
+        <td class="small {{ 'muted' if ev.type not in ('failed','bounced') else '' }}" style="max-width:420px;{{ 'color:var(--bad)' if ev.type in ('failed','bounced') }}">{{ (ev.detail or '')|truncate(140) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {{ pager(page, args, url_for('outbox.activity')) }}
+  {% else %}<div class="empty"><h3>No activity</h3><p>Nothing matches these filters.</p></div>{% endif %}
+</div>
+{% endblock %}

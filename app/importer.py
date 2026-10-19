@@ -1,200 +1,429 @@
+"""Bulk import / export of contacts and their per-person email content (CSV or XLSX)."""
 import csv
 import io
+import json
+import os
 import re
-from datetime import datetime
+import secrets
+import tempfile
+import time
+from datetime import date, datetime
 
-from app.db import SessionLocal, init_db
-from app.models import Campaign, Contact
-from app.services import add_tags
+from dateutil import parser as dateparser
 
-REQUIRED_COLS = ["email"]
-VALID_SEND = {"send", "do not send", "verify email first", ""}
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+from app.models import Campaign, CampaignStep, Contact, Message
+from app import settings as app_settings
+from app.merge import slug
+from app.services import (
+    EMAIL_RE, add_tags, get_or_create_message, recompute_contact, steps_of,
+)
 
-def parse_date(value):
-    value = (value or "").strip()
-    if not value:
-        return None
+IMPORT_DIR = os.path.join(tempfile.gettempdir(), "outreach_imports")
+MAX_STEP_INDEX = 12
+
+BASE_TARGETS = [
+    ("ignore", "Ignore this column"),
+    ("email", "Email (required)"),
+    ("first_name", "First name"),
+    ("last_name", "Last name"),
+    ("full_name", "Full name (split)"),
+    ("company", "Company"),
+    ("phone", "Phone"),
+    ("priority", "Priority"),
+    ("tags", "Tags"),
+    ("notes", "Notes"),
+    ("send", "Send? (Send / Do not send / Verify)"),
+    ("custom", "Custom merge field"),
+]
+
+
+def step_targets(n_steps):
+    out = []
+    for n in range(1, max(n_steps, 4) + 1):
+        out += [(f"step{n}_subject", f"Stage {n}: subject"),
+                (f"step{n}_body", f"Stage {n}: email body"),
+                (f"step{n}_date", f"Stage {n}: send date")]
+    return out
+
+
+# ------------------------------------------------------------------ reading files
+
+def _sniff_csv(text):
+    sample = text[:4000]
     try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        return dialect
+    except csv.Error:
+        return csv.excel
+
+
+def read_table(filename, raw):
+    """Return (headers, rows) where rows are lists of strings. Detects the header row."""
+    name = (filename or "").lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        ws = wb.active
+        grid = [["" if v is None else (v.date().isoformat() if isinstance(v, datetime) else str(v))
+                 for v in row] for row in ws.iter_rows(values_only=True)]
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+        grid = list(csv.reader(io.StringIO(text), _sniff_csv(text)))
+    grid = [r for r in grid if any((c or "").strip() for c in r)]
+    if not grid:
+        raise ValueError("The file is empty.")
+    header_idx = None
+    for i, row in enumerate(grid[:25]):
+        if any(re.fullmatch(r"\s*e-?mail( address)?\s*", c or "", re.I) or re.fullmatch(r"\s*email\s*\*?\s*", c or "", re.I)
+               for c in row):
+            header_idx = i
+            break
+    if header_idx is None:
+        # fall back: first row whose any cell is exactly something containing 'email'
+        for i, row in enumerate(grid[:25]):
+            if any("email" in (c or "").lower() and "@" not in (c or "") for c in row):
+                header_idx = i
+                break
+    if header_idx is None:
+        raise ValueError("Could not find a header row with an 'Email' column.")
+    headers, seen = [], {}
+    for h in grid[header_idx]:
+        h = (h or "").strip() or "column"
+        seen[h] = seen.get(h, 0) + 1
+        headers.append(h if seen[h] == 1 else f"{h} ({seen[h]})")
+    width = len(headers)
+    rows = [(r + [""] * width)[:width] for r in grid[header_idx + 1:]]
+    return headers, rows
+
+
+def save_upload(filename, raw):
+    os.makedirs(IMPORT_DIR, exist_ok=True)
+    cutoff = time.time() - 86400
+    for f in os.listdir(IMPORT_DIR):
+        p = os.path.join(IMPORT_DIR, f)
+        try:
+            if os.path.getmtime(p) < cutoff:
+                os.remove(p)
+        except OSError:
+            pass
+    token = secrets.token_hex(12)
+    with open(os.path.join(IMPORT_DIR, token + ".bin"), "wb") as fh:
+        fh.write(raw)
+    with open(os.path.join(IMPORT_DIR, token + ".json"), "w") as fh:
+        json.dump({"filename": filename}, fh)
+    return token
+
+
+def load_upload(token):
+    if not re.fullmatch(r"[0-9a-f]{24}", token or ""):
+        raise ValueError("Upload expired. Please upload the file again.")
+    try:
+        with open(os.path.join(IMPORT_DIR, token + ".bin"), "rb") as fh:
+            raw = fh.read()
+        with open(os.path.join(IMPORT_DIR, token + ".json")) as fh:
+            name = json.load(fh)["filename"]
+    except OSError:
+        raise ValueError("Upload expired. Please upload the file again.")
+    return name, raw
+
+
+# ------------------------------------------------------------------ column mapping
+
+DAY_DATE = re.compile(r"^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+\d{1,2}\s+[a-z]{3}", re.I)
+
+
+def guess_target(header):
+    h = (header or "").strip()
+    c = re.sub(r"[^a-z0-9]", "", re.sub(r"\(\d+\)$", "", h.lower()))
+    if DAY_DATE.match(h):
+        return "step1_date"
+    if c in ("email", "emailaddress", "mail", "emailaddr"):
+        return "email"
+    m = re.fullmatch(r"(?:email|mail|message|body|stage|step)(\d+)(body|text|message)?", c)
+    if m:
+        return f"step{int(m.group(1))}_body"
+    m = re.fullmatch(r"(?:email|mail|stage|step)(\d+)(subject|subjectline)", c)
+    if m:
+        return f"step{int(m.group(1))}_subject"
+    m = re.fullmatch(r"(?:email|mail|stage|step)(\d+)(date|senddate|sendon)", c)
+    if m:
+        return f"step{int(m.group(1))}_date"
+    m = re.fullmatch(r"followup(\d+)(body|text|message|email)?", c)
+    if m:
+        return f"step{int(m.group(1)) + 1}_body"
+    m = re.fullmatch(r"followup(\d+)(subject|subjectline)", c)
+    if m:
+        return f"step{int(m.group(1)) + 1}_subject"
+    m = re.fullmatch(r"followup(\d+)(date|senddate|sendon)", c)
+    if m:
+        return f"step{int(m.group(1)) + 1}_date"
+    simple = {
+        "subject": "step1_subject", "subjectline": "step1_subject",
+        "firstname": "first_name", "first": "first_name", "fname": "first_name", "givenname": "first_name",
+        "lastname": "last_name", "last": "last_name", "surname": "last_name", "lname": "last_name",
+        "name": "full_name", "fullname": "full_name", "contactname": "full_name",
+        "company": "company", "companyname": "company", "business": "company",
+        "organisation": "company", "organization": "company",
+        "phone": "phone", "telephone": "phone", "mobile": "phone", "phonenumber": "phone",
+        "priority": "priority", "tags": "tags", "tag": "tags",
+        "notes": "notes", "note": "notes", "comments": "notes",
+        "send": "send", "sendstatus": "send",
+        "status": "ignore", "no": "ignore", "id": "ignore",
+    }
+    if c in simple:
+        return simple[c]
+    if c.startswith("notes") or c.startswith("comments"):
+        return "notes"
+    return "custom" if c else "ignore"
+
+
+def guess_mapping(headers):
+    mapping = [guess_target(h) for h in headers]
+    seen = set()
+    for i, t in enumerate(mapping):
+        if t not in ("ignore", "custom"):
+            if t in seen:
+                mapping[i] = "custom" if not t.startswith("step") else "ignore"
+            seen.add(t)
+    if "email" not in mapping:
+        for i, h in enumerate(headers):
+            if "email" in h.lower() and mapping[i] in ("custom", "ignore"):
+                mapping[i] = "email"
+                break
+    return mapping
+
+
+# ------------------------------------------------------------------ parsing rows
+
+def parse_date_cell(value, today=None):
+    v = (value or "").strip()
+    if not v:
         return None
+    today = today or date.today()
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            return datetime.strptime(v, "%Y-%m-%d").date()
+        d = dateparser.parse(v, fuzzy=True, dayfirst=True, default=datetime(today.year, 1, 1)).date()
+    except (ValueError, OverflowError):
+        return None
+    has_year = bool(re.search(r"\d{4}", v))
+    if not has_year and (today - d).days > 183:
+        d = d.replace(year=d.year + 1)
+    return d
 
-def normalize_send(value):
+
+def normalise_send(value):
     v = (value or "").strip().lower()
-    if v not in VALID_SEND:
-        return None  # invalid
-    return v or "send"
+    if v in ("", "send", "yes", "y", "true", "1"):
+        return "send"
+    if v.startswith("verify"):
+        return "verify"
+    if v.startswith(("do not", "dont", "don't", "no", "skip", "false", "0", "pause")):
+        return "skip"
+    return None
 
-def get_or_create_campaign(session, campaign_id=None, campaign_name=None):
-    if campaign_id:
-        camp = session.query(Campaign).get(campaign_id)
-        if not camp:
-            raise ValueError(f"Campaign id {campaign_id} not found")
-        return camp
-    if campaign_name:
-        camp = session.query(Campaign).filter(Campaign.name == campaign_name).first()
-        if not camp:
-            camp = Campaign(name=campaign_name)
-            session.add(camp)
-            session.flush()
-        return camp
-    raise ValueError("Either campaign_id or campaign_name is required")
 
-def parse_csv_text(text):
-    reader = csv.DictReader(io.StringIO(text))
-    reader.fieldnames = [f.strip().lower() for f in reader.fieldnames]
-    for col in REQUIRED_COLS:
-        if col not in reader.fieldnames:
-            raise ValueError(f"CSV missing required column: {col}")
-    return list(reader)
-
-def validate_rows(rows, session, campaign_id):
-    """Returns (valid_rows, errors) without touching the DB."""
-    errors = []
-    valid = []
-    existing_emails = set()
-    if campaign_id:
-        existing_emails = {
-            c.email for c in session.query(Contact).filter(Contact.campaign_id == campaign_id).all()
-        }
-
-    for i, row in enumerate(rows, start=2):  # row 1 = header
-        email = (row.get("email") or "").strip().lower()
+def parse_rows(rows, headers, mapping, custom_as_fields=True):
+    """Turn raw rows into normalised dicts. Returns (parsed, errors)."""
+    parsed, errors = [], []
+    custom_names = {i: slug(h) for i, h in enumerate(headers) if mapping[i] == "custom"}
+    for n, row in enumerate(rows, start=2):
+        rec = {"row": n, "custom": {}, "steps": {}, "tags": ""}
+        for i, target in enumerate(mapping):
+            val = (row[i] or "").strip() if i < len(row) else ""
+            if target == "ignore" or not val:
+                continue
+            if target == "custom":
+                if custom_as_fields and custom_names.get(i):
+                    rec["custom"][custom_names[i]] = val
+            elif target.startswith("step"):
+                idx, _, kind = target[4:].partition("_")
+                st = rec["steps"].setdefault(int(idx), {})
+                st[kind] = val
+            elif target == "full_name":
+                first, _, last = val.partition(" ")
+                rec.setdefault("first_name", first)
+                rec.setdefault("last_name", last)
+            else:
+                rec[target] = val
+        email = (rec.get("email") or "").strip().lower()
         if not email:
-            errors.append({"row": i, "error": "missing email"})
+            if any((c or "").strip() for c in row):
+                errors.append({"row": n, "email": "", "error": "missing email"})
             continue
         if not EMAIL_RE.match(email):
-            errors.append({"row": i, "email": email, "error": "invalid email format"})
+            errors.append({"row": n, "email": email, "error": "invalid email format"})
             continue
-        send_val = normalize_send(row.get("send"))
-        if send_val is None:
-            errors.append({"row": i, "email": email, "error": f"invalid 'send' value: {row.get('send')}"})
+        rec["email"] = email
+        send = normalise_send(rec.get("send"))
+        if send is None:
+            errors.append({"row": n, "email": email, "error": f"unrecognised Send? value: {rec.get('send')}"})
             continue
-        fu1_date = parse_date(row.get("followup1_date"))
-        if row.get("followup1_date") and not fu1_date:
-            errors.append({"row": i, "email": email, "error": "followup1_date must be YYYY-MM-DD"})
-            continue
-        fu2_date = parse_date(row.get("followup2_date"))
-        if row.get("followup2_date") and not fu2_date:
-            errors.append({"row": i, "email": email, "error": "followup2_date must be YYYY-MM-DD"})
-            continue
+        rec["send"] = send
+        for idx, st in rec["steps"].items():
+            if "date" in st:
+                d = parse_date_cell(st["date"])
+                if d is None:
+                    errors.append({"row": n, "email": email, "error": f"bad date for stage {idx}: {st['date']}"})
+                    st.pop("date")
+                else:
+                    st["date"] = d
+        parsed.append(rec)
+    return parsed, errors
 
-        valid.append({
-            "row": i,
-            "email": email,
-            "company": row.get("company"),
-            "first_name": row.get("first_name"),
-            "last_name": row.get("last_name"),
-            "priority": row.get("priority"),
-            "send": send_val,
-            "subject": row.get("subject"),
-            "email1_body": row.get("email1_body"),
-            "followup1_body": row.get("followup1_body"),
-            "followup1_date": fu1_date,
-            "followup2_body": row.get("followup2_body"),
-            "followup2_date": fu2_date,
-            "will_update": email in existing_emails,
-            "phone": row.get("phone"),
-            "notes": row.get("notes"),
-            "tags": row.get("tags"),
-        })
-    return valid, errors
 
-def apply_rows(session, campaign, valid_rows):
-    created, updated = 0, 0
-    for r in valid_rows:
-        do_not_send = r["send"] == "do not send"
-        existing = session.query(Contact).filter(
-            Contact.campaign_id == campaign.id, Contact.email == r["email"]
-        ).first()
+def analyse(session, parsed, campaign, mode="upsert"):
+    """Dry run: classify every row without writing."""
+    existing = {}
+    if campaign is not None and campaign.id:
+        existing = {c.email.lower(): c for c in session.query(Contact).filter(Contact.campaign_id == campaign.id)}
+    seen, plan = set(), []
+    stats = {"creates": 0, "updates": 0, "skip_existing": 0, "skip_missing": 0, "skip_dnr": 0,
+             "dupes_in_file": 0, "customised": 0}
+    for rec in parsed:
+        e = rec["email"]
+        if e in seen:
+            stats["dupes_in_file"] += 1
+            continue
+        seen.add(e)
+        exists = e in existing
+        if rec["send"] == "skip" and not exists:
+            stats["skip_dnr"] += 1
+            continue
+        if mode == "create_only" and exists:
+            stats["skip_existing"] += 1
+            continue
+        if mode == "update_only" and not exists:
+            stats["skip_missing"] += 1
+            continue
+        stats["updates" if exists else "creates"] += 1
+        if any(s.get("body") or s.get("subject") for s in rec["steps"].values()):
+            stats["customised"] += 1
+        plan.append((rec, existing.get(e)))
+    return plan, stats
 
-        fields = dict(
-            company=r["company"], first_name=r["first_name"], last_name=r["last_name"],
-            phone=r["phone"], notes=r["notes"],
-            priority=r["priority"], subject=r["subject"], body1=r["email1_body"],
-            body2=r["followup1_body"], body2_date=r["followup1_date"],
-            body3=r["followup2_body"], body3_date=r["followup2_date"],
-            needs_verification=(r["send"] == "verify email first"),
-        )
-        if existing:
-            if do_not_send:
-                existing.send_flag = False
-            else:
-                for k, v in fields.items():
-                    setattr(existing, k, v)
-                existing.send_flag = True
-            if r["tags"]:
-                add_tags(session, existing, r["tags"])
-            updated += 1
-        else:
-            if do_not_send:
-                continue
-            c = Contact(campaign_id=campaign.id, email=r["email"], send_flag=True, stage=0, **fields)
-            session.add(c)
+
+def apply_plan(session, campaign, plan, settings=None):
+    steps = {s.position: s for s in steps_of(session, campaign.id)}
+    max_idx = max([i for rec, _ in plan for i in rec["steps"]] or [0])
+    if max_idx > MAX_STEP_INDEX:
+        raise ValueError(f"Too many stages in file (max {MAX_STEP_INDEX}).")
+    for idx in range(1, max_idx + 1):
+        if idx not in steps:
+            st = CampaignStep(campaign_id=campaign.id, position=idx,
+                              name="Email 1" if idx == 1 else f"Follow-up {idx - 1}",
+                              delay_hours=0 if idx == 1 else 72)
+            session.add(st)
             session.flush()
-            if r["tags"]:
-                add_tags(session, c, r["tags"])
-            created += 1
-    session.commit()
-    return created, updated
+            steps[idx] = st
+    ordered = [steps[k] for k in sorted(steps)]
 
-def export_csv(campaign_id=None):
-    init_db()
-    session = SessionLocal()
-    try:
-        q = session.query(Contact)
-        if campaign_id:
-            q = q.filter(Contact.campaign_id == campaign_id)
-        contacts = q.all()
+    created = updated = locked = 0
+    for rec, contact in plan:
+        is_new = contact is None
+        if is_new:
+            contact = Contact(campaign_id=campaign.id, email=rec["email"], stage=0, send_flag=True)
+            session.add(contact)
+        for f in ("company", "first_name", "last_name", "phone", "priority", "notes"):
+            if rec.get(f):
+                setattr(contact, f, rec[f])
+        if rec["custom"]:
+            merged = contact.custom_fields
+            merged.update(rec["custom"])
+            contact.custom_fields = merged
+        if rec["send"] == "verify":
+            contact.needs_verification = True
+        elif rec["send"] == "skip":
+            contact.send_flag = False
+        if is_new:
+            session.flush()
+        if rec.get("tags"):
+            add_tags(session, contact, rec["tags"])
+        for idx, data in rec["steps"].items():
+            if not (data.get("subject") or data.get("body") or data.get("date")):
+                continue
+            msg = get_or_create_message(session, contact, steps[idx])
+            if msg.status == "sent":
+                locked += 1
+                continue
+            if data.get("subject"):
+                msg.subject = data["subject"]
+            if data.get("body"):
+                msg.body = data["body"]
+            if data.get("date"):
+                midnight = datetime.combine(data["date"], datetime.min.time())
+                msg.due_at = app_settings.local_to_utc(midnight, settings) if settings else midnight
+        session.flush()
+        recompute_contact(session, contact, ordered, campaign)
+        created += is_new
+        updated += not is_new
+    return created, updated, locked
 
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow([
-            "company", "first_name", "last_name", "email", "phone", "priority", "send",
-            "subject", "email1_body", "followup1_body", "followup1_date",
-            "followup2_body", "followup2_date", "tags", "notes",
-            "stage", "replied", "unsubscribed",
-        ])
-        for c in contacts:
-            send_val = "Verify email first" if c.needs_verification else ("Send" if c.send_flag else "Do not send")
-            writer.writerow([
-                c.company, c.first_name, c.last_name, c.email, c.phone, c.priority, send_val,
-                c.subject, c.body1, c.body2, c.body2_date or "", c.body3, c.body3_date or "",
-                ",".join(sorted(t.name for t in c.tags)), c.notes,
-                c.stage, c.replied, c.unsubscribed,
-            ])
-        return buf.getvalue()
-    finally:
-        session.close()
 
-def run_import(csv_text, dry_run, campaign_id=None, campaign_name=None):
-    init_db()
-    session = SessionLocal()
-    try:
-        rows = parse_csv_text(csv_text)
-        campaign = get_or_create_campaign(session, campaign_id, campaign_name)
-        valid, errors = validate_rows(rows, session, campaign.id)
+# ------------------------------------------------------------------ export / templates
 
-        if dry_run:
-            session.rollback()
-            return {
-                "dry_run": True,
-                "campaign_id": campaign.id,
-                "campaign_name": campaign.name,
-                "to_create": sum(1 for r in valid if not r["will_update"]),
-                "to_update": sum(1 for r in valid if r["will_update"]),
-                "errors": errors,
-            }
+CORE_COLUMNS = ["email", "first_name", "last_name", "company", "phone", "priority", "send", "tags", "notes"]
 
-        created, updated = apply_rows(session, campaign, valid)
-        return {
-            "dry_run": False,
-            "campaign_id": campaign.id,
-            "campaign_name": campaign.name,
-            "created": created,
-            "updated": updated,
-            "errors": errors,
-        }
-    finally:
-        session.close()
+
+def contact_status_label(c):
+    if c.bounced:
+        return "bounced"
+    if c.unsubscribed:
+        return "unsubscribed"
+    if c.replied:
+        return "replied"
+    if c.needs_verification:
+        return "verify"
+    if not c.send_flag:
+        return "paused"
+    return "ready" if not c.stage else f"stage {c.stage} sent"
+
+
+def export_csv(session, contacts, steps):
+    """Round-trippable export: same column names the importer understands."""
+    custom_keys = []
+    for c in contacts:
+        for k in c.custom_fields:
+            if k not in custom_keys:
+                custom_keys.append(k)
+    n = max(len(steps), 1)
+    step_cols = []
+    for i in range(1, n + 1):
+        step_cols += [f"stage{i}_subject", f"stage{i}_body", f"stage{i}_date"]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(CORE_COLUMNS + step_cols + custom_keys + ["current_stage", "status"])
+    step_by_pos = {s.position: s for s in steps}
+    for c in contacts:
+        msgs = {m.position: m for m in c.messages}
+        send_val = "Verify email first" if c.needs_verification else ("Send" if c.send_flag else "Do not send")
+        row = [c.email, c.first_name, c.last_name, c.company, c.phone, c.priority, send_val,
+               ",".join(sorted(t.name for t in c.tags)), c.notes]
+        for i in range(1, n + 1):
+            m = msgs.get(i)
+            row += [m.subject if m else "", m.body if m else "", m.due_at.date().isoformat() if m and m.due_at else ""]
+        row += [c.custom_fields.get(k, "") for k in custom_keys]
+        row += [c.stage or 0, contact_status_label(c)]
+        w.writerow(row)
+    return buf.getvalue()
+
+
+def template_csv(steps):
+    n = max(len(steps), 3)
+    cols = ["email", "first_name", "last_name", "company", "phone", "priority", "send", "tags", "notes"]
+    for i in range(1, n + 1):
+        cols += [f"stage{i}_subject", f"stage{i}_body", f"stage{i}_date"]
+    cols += ["website"]
+    sample = ["jane@acmehotel.ie", "Jane", "Doe", "Acme Hotel", "+353 1 000 0000", "High", "Send", "hotels,dublin",
+              "Decision maker"]
+    for i in range(1, n + 1):
+        if i == 1:
+            sample += ["Your booking link isn't working", "Hi Jane,\n\nI noticed your booking button...\n\nBest regards,", ""]
+        else:
+            sample += ["", f"Hi Jane,\n\nFollowing up on my note (stage {i})...\n\nBest regards,", ""]
+    sample += ["https://acmehotel.ie"]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(cols)
+    w.writerow(sample)
+    return buf.getvalue()

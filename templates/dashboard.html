@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, stat, activity_chart %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Dashboard</h1><div class="sub">Everything running across all campaigns.</div></div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('imports.upload') }}">{{ icon('upload') }} Import contacts</a>
+    <a class="btn btn-primary" href="{{ url_for('campaigns.new') }}">{{ icon('plus') }} New campaign</a>
+  </div>
+</div>
+
+{% if health.paused %}
+<div class="banner bad"><b>Sending is switched off.</b> No emails go out until you turn it back on in <a href="{{ url_for('admin.settings') }}">Settings</a>.</div>
+{% elif not health.smtp_configured %}
+<div class="banner bad"><b>SMTP is not configured.</b> Add SMTP_HOST, SMTP_USER and SMTP_PASSWORD to the server's .env file.</div>
+{% elif not health.worker_alive %}
+<div class="banner bad"><b>The sending worker doesn't seem to be running.</b> Check <code>docker compose logs worker</code>.</div>
+{% endif %}
+{% if failed %}
+<div class="banner"><b>{{ failed }} email{{ 's' if failed != 1 }} failed to send.</b> <a href="{{ url_for('outbox.index', view='failed') }}">Review and retry</a></div>
+{% endif %}
+
+<div class="grid g5 mb2">
+  {{ stat('Sent today', sent_today, 'of ' ~ s.daily_limit ~ ' daily limit') }}
+  {{ stat('Emails sent', eng.emails_sent, eng.contacted ~ ' contacts reached', href=url_for('outbox.activity', type='sent')) }}
+  {{ stat('Open rate', eng.open_rate ~ '%', eng.opened ~ ' opened', 'good' if eng.open_rate >= 40 else '') }}
+  {{ stat('Replies', eng.replied, eng.reply_rate ~ '% reply rate', 'good' if eng.replied else '', href=url_for('contacts.index', status='replied')) }}
+  {{ stat('Failed / queued', eng.failed ~ ' / ' ~ eng.queued, 'needs attention' if eng.failed else 'all clear', 'bad' if eng.failed else '', href=url_for('outbox.index', view='failed' if eng.failed else 'queued')) }}
+</div>
+
+<div class="grid g-side">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Last 14 days</h2></div>
+      <div class="card-body">{{ activity_chart(activity, peak) }}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Campaigns</h2><a class="btn btn-sm" href="{{ url_for('campaigns.index') }}">View all</a></div>
+      {% if campaigns %}
+      <div class="table-wrap"><table class="tbl">
+        <thead><tr><th>Campaign</th><th>Status</th><th class="num">Contacts</th><th class="num">Ready</th><th class="num">In sequence</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th></tr></thead>
+        <tbody>
+        {% for c in campaigns[:8] %}{% set m = summaries.get(c.id, {}) %}
+          <tr>
+            <td><a class="primary" href="{{ url_for('campaigns.overview', cid=c.id) }}">{{ c.name }}</a></td>
+            <td>{{ pill(c.status) }}</td>
+            <td class="num">{{ m.get('total', 0) }}</td><td class="num">{{ m.get('ready', 0) }}</td><td class="num">{{ m.get('in_sequence', 0) }}</td>
+            <td class="num">{{ m.get('sent', 0) }}</td><td class="num">{{ m.get('open_rate', 0) }}%</td><td class="num">{{ m.get('replied', 0) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}
+      <div class="empty"><h3>No campaigns yet</h3><p>Create a campaign, write its email stages, then import your contacts.</p><a class="btn btn-primary" href="{{ url_for('campaigns.new') }}">Create your first campaign</a></div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Next up</h2><span class="muted small">active campaigns only</span></div>
+      {% if upcoming %}
+      <table class="tbl tbl-compact"><tbody>
+        {% for c in upcoming %}
+        <tr><td><a class="primary" href="{{ url_for('contacts.detail', contact_id=c.id) }}">{{ c.email }}</a><div class="sub">{{ c.company or '' }}</div></td>
+            <td>{{ c.campaign.name }}</td><td>Stage {{ (c.stage or 0) + 1 }}</td><td class="right">{{ pill('due' if (not c.next_due_at or c.next_due_at <= now) else 'scheduled', c.next_due_at|when) }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      {% else %}<div class="empty" style="padding:26px"><p class="mb1">Nothing is scheduled. Start a campaign to begin sending.</p></div>{% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>System</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Sending</dt><dd><span class="status-dot {{ 'bad' if health.paused else 'good' }}"></span>{{ 'Switched off' if health.paused else 'Enabled' }}</dd>
+          <dt>Worker</dt><dd><span class="status-dot {{ 'good' if health.worker_alive else 'bad' }}"></span>{{ health.worker_status }}</dd>
+          <dt>SMTP</dt><dd><span class="status-dot {{ 'good' if health.smtp_configured else 'bad' }}"></span>{{ 'Configured' if health.smtp_configured else 'Not configured' }}</dd>
+          <dt>Replies</dt><dd><span class="status-dot {{ 'good' if health.reply_alive and health.imap_configured else 'warn' }}"></span>{{ health.reply_status if health.imap_configured else 'IMAP not configured' }}</dd>
+          <dt>Pace</dt><dd>{{ s.min_delay }}-{{ s.max_delay }}s between emails, max {{ s.daily_limit }}/day</dd>
+        </dl>
+        <a class="btn btn-sm mt2" href="{{ url_for('admin.settings') }}">Change sending settings</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Contacts</h2><a class="btn btn-sm" href="{{ url_for('contacts.index') }}">Open</a></div>
+      <div class="card-body">
+        <div class="status-split">
+          {% for key in ['ready','in_sequence','finished','replied','unsubscribed','bounced','verify','paused'] %}
+          <a href="{{ url_for('contacts.index', status=key) }}"><span class="pill {{ key }}">{{ STATUS_LABELS[key] }}</span><b>{{ counts[key] }}</b></a>
+          {% endfor %}
+        </div>
+        <p class="muted small mt2 mb1">{{ counts.total }} contacts in total</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Recent activity</h2><a class="btn btn-sm" href="{{ url_for('outbox.activity') }}">All</a></div>
+      <ul class="timeline" style="padding:0 18px">
+        {% for ev, c in recent %}
+        <li><span class="pill {{ ev.type }}">{{ ev.type }}</span><a href="{{ url_for('contacts.detail', contact_id=c.id) }}">{{ c.email }}</a><time>{{ ev.created_at|ago }}</time></li>
+        {% else %}<li class="muted">Nothing yet.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

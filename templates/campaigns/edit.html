@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ c.name }} · Settings{% endblock %}
+{% block content %}
+{% include "campaigns/_head.html" %}
+
+<form method="post" class="stack" style="max-width:820px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card card-pad">
+    <h2 class="mb2">General</h2>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ c.name }}" required></label>
+      <label class="field"><span class="lbl">Start sending not before <span class="faint">({{ s.timezone }})</span></span><input type="datetime-local" name="start_at" value="{{ start_value }}"><div class="hint">Leave empty to send as soon as the campaign is started.</div></label>
+      <label class="field full"><span class="lbl">Description</span><textarea name="description" rows="2">{{ c.description or '' }}</textarea></label>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2>Pacing overrides</h2>
+    <p class="muted small mb2">Leave blank to use the global values from <a href="{{ url_for('admin.settings') }}">Settings</a> ({{ s.min_delay }}-{{ s.max_delay }}s, {{ s.daily_limit }}/day across all campaigns).</p>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Min delay between emails (seconds)</span><input type="number" min="0" name="min_delay" value="{{ c.min_delay if c.min_delay is not none else '' }}" placeholder="{{ s.min_delay }}"></label>
+      <label class="field"><span class="lbl">Max delay between emails (seconds)</span><input type="number" min="0" name="max_delay" value="{{ c.max_delay if c.max_delay is not none else '' }}" placeholder="{{ s.max_delay }}"></label>
+      <label class="field"><span class="lbl">Daily limit for this campaign</span><input type="number" min="1" name="daily_limit" value="{{ c.daily_limit or '' }}" placeholder="no separate limit"></label>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="mb2">Sender &amp; tracking</h2>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Sender name</span><input type="text" name="sender_name" value="{{ c.sender_name or '' }}" placeholder="{{ s.sender_name }}"></label>
+      <label class="field"><span class="lbl">Reply-To address</span><input type="email" name="reply_to" value="{{ c.reply_to or '' }}" placeholder="{{ s.reply_to or 'same as sender' }}"></label>
+      <label class="check"><input type="checkbox" name="track_opens" value="1" {{ 'checked' if c.track_opens is not false }}><span><b>Track opens</b><div class="hint">Adds a 1px image. Needs the global option on as well.</div></span></label>
+      <label class="check"><input type="checkbox" name="track_clicks" value="1" {{ 'checked' if c.track_clicks is not false }}><span><b>Track link clicks</b><div class="hint">Links are redirected through your tracking domain.</div></span></label>
+    </div>
+  </div>
+  <div class="form-actions" style="margin-top:0"><button class="btn btn-primary">Save settings</button></div>
+</form>
+
+<div class="grid g2 mt3" style="max-width:820px">
+  <div class="card card-pad">
+    <h3>Duplicate</h3>
+    <p class="muted small">Copies the emails and settings into a new draft (no contacts).</p>
+    <form method="post" action="{{ url_for('campaigns.duplicate', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn">{{ icon('copy') }} Duplicate campaign</button></form>
+    {% if c.status != 'archived' %}
+    <h3 class="mt2">Archive</h3>
+    <p class="muted small">Hides it from the list and stops all sending. Reversible.</p>
+    <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="archive"><button class="btn" data-confirm="Archive this campaign?">Archive campaign</button></form>
+    {% endif %}
+  </div>
+  <div class="card card-pad danger-zone">
+    <h3 style="color:var(--bad)">Delete campaign</h3>
+    <p class="muted small">Permanently deletes the campaign, its stages, all {{ n_contacts }} contacts and their history.</p>
+    <form method="post" action="{{ url_for('campaigns.delete', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="field"><span class="lbl">Type <code>{{ c.name }}</code> to confirm</span><input type="text" name="confirm_name" autocomplete="off"></label>
+      <button class="btn btn-solid-danger mt1" data-confirm="This cannot be undone. Delete everything in this campaign?">{{ icon('trash') }} Delete forever</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

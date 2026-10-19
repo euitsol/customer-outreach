@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, stat, activity_chart %}
+{% block title %}{{ c.name }}{% endblock %}
+{% block content %}
+{% include "campaigns/_head.html" %}
+
+{% if not steps %}
+<div class="banner bad"><b>No emails written yet.</b> <a href="{{ url_for('campaigns.sequence', cid=c.id) }}">Add the first stage</a> before starting.</div>
+{% elif counts.total == 0 %}
+<div class="banner"><b>No contacts yet.</b> <a href="{{ url_for('imports.upload', campaign=c.id) }}">Import a CSV/Excel file</a> or <a href="{{ url_for('contacts.new', campaign=c.id) }}">add one by hand</a>.</div>
+{% endif %}
+{% if no_content %}
+<div class="banner bad"><b>{{ no_content }} contact{{ 's' if no_content != 1 }} have no email text for stage 1.</b> Write the stage 1 template or import personalised emails, otherwise those sends will fail.</div>
+{% endif %}
+{% if c.status == 'draft' %}
+<div class="banner">This campaign is a <b>draft</b>: nothing is sent until you press <b>Start campaign</b>. Contacts can still be sent individually from the Contacts tab.</div>
+{% endif %}
+
+<div class="grid g5 mb2">
+  {{ stat('Contacts', counts.total, counts.ready ~ ' ready to start', href=url_for('contacts.in_campaign', cid=c.id)) }}
+  {{ stat('Emails sent', eng.emails_sent, eng.contacted ~ ' contacted') }}
+  {{ stat('Opened', eng.open_rate ~ '%', eng.opened ~ ' contacts · ' ~ eng.total_opens ~ ' opens', 'good' if eng.open_rate >= 40 else '') }}
+  {{ stat('Replied', eng.replied, eng.reply_rate ~ '%', 'good' if eng.replied else '', href=url_for('contacts.in_campaign', cid=c.id, status='replied')) }}
+  {{ stat('Failed', eng.failed, 'queued: ' ~ eng.queued, 'bad' if eng.failed else '', href=url_for('outbox.in_campaign', cid=c.id, view='failed' if eng.failed else 'queued')) }}
+</div>
+
+<div class="card mb2">
+  <div class="card-head"><h2>Stages</h2><span class="muted small">Retry, send early or cancel at a single stage</span>
+    <a class="btn btn-sm" href="{{ url_for('campaigns.sequence', cid=c.id) }}">Edit emails</a></div>
+  {% if stages %}
+  <div class="table-wrap"><table class="tbl funnel">
+    <thead><tr><th>Stage</th><th>Wait</th><th class="num">Waiting</th><th class="num">Due now</th><th class="num">Sent</th><th class="num">Opened</th><th class="num">Clicked</th><th class="num">Replied</th><th class="num">Failed</th><th class="num">Queued</th><th class="num">Custom</th><th></th></tr></thead>
+    <tbody>
+    {% for r in stages %}{% set st = r.step %}
+      <tr>
+        <td><b>{{ st.position }}.</b> <a class="primary" href="{{ url_for('campaigns.sequence', cid=c.id) }}#stage-{{ st.position }}">{{ st.name }}</a></td>
+        <td class="muted">{{ st.delay_hours|delay if st.position > 1 else '-' }}</td>
+        <td class="num">{{ r.waiting }}</td>
+        <td class="num">{% if r.due %}<b>{{ r.due }}</b>{% else %}0{% endif %}</td>
+        <td class="num">{{ r.sent }}</td>
+        <td class="num">{{ r.opened }}</td>
+        <td class="num">{{ r.clicked }}</td>
+        <td class="num">{{ r.replied }}</td>
+        <td class="num">{% if r.failed %}<a style="color:var(--bad)" href="{{ url_for('outbox.in_campaign', cid=c.id, view='failed', stage=st.position) }}"><b>{{ r.failed }}</b></a>{% else %}0{% endif %}</td>
+        <td class="num">{{ r.queued }}</td>
+        <td class="num" title="Contacts with their own text for this stage">{{ r.custom }}</td>
+        <td class="right nowrap">
+          <form method="post" action="{{ url_for('campaigns.step_action', cid=c.id, sid=st.id) }}" style="display:inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if r.failed %}<button class="btn btn-sm" name="action" value="retry_failed" title="Re-send every email that failed at this stage">{{ icon('refresh') }} Retry {{ r.failed }} failed</button>{% endif %}
+            {% if r.waiting %}<button class="btn btn-sm" name="action" value="send_now" data-confirm="Queue stage {{ st.position }} now for all {{ r.waiting }} contacts waiting for it, ignoring the wait time? They still go out one by one at your configured pace.">Send now</button>{% endif %}
+            {% if r.queued %}<button class="btn btn-sm btn-ghost" name="action" value="cancel_queued">Cancel queued</button>{% endif %}
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<div class="empty"><p>No stages yet.</p></div>{% endif %}
+</div>
+
+<div class="grid g-side">
+  <div class="card">
+    <div class="card-head"><h2>Last 14 days</h2></div>
+    <div class="card-body">{{ activity_chart(activity, peak) }}</div>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Contacts by status</h2></div>
+      <div class="card-body"><div class="status-split">
+        {% for key in ['ready','in_sequence','finished','replied','unsubscribed','bounced','verify','paused'] %}
+        <a href="{{ url_for('contacts.in_campaign', cid=c.id, status=key) }}"><span class="pill {{ key }}">{{ STATUS_LABELS[key] }}</span><b>{{ counts[key] }}</b></a>
+        {% endfor %}
+      </div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Pacing</h2><a class="btn btn-sm" href="{{ url_for('campaigns.edit', cid=c.id) }}">Change</a></div>
+      <div class="card-body"><dl class="kv">
+        <dt>Delay</dt><dd>{{ c.min_delay if c.min_delay is not none else s.min_delay }}-{{ c.max_delay if c.max_delay is not none else s.max_delay }}s between emails{% if c.min_delay is none %} <span class="faint">(global)</span>{% endif %}</dd>
+        <dt>Daily cap</dt><dd>{{ c.daily_limit if c.daily_limit else 'global (' ~ s.daily_limit ~ ')' }}</dd>
+        <dt>Starts</dt><dd>{{ c.start_at|dt if c.start_at else 'as soon as it is started' }}</dd>
+        <dt>Tracking</dt><dd>{{ 'opens' if c.track_opens else '' }}{{ ', ' if c.track_opens and c.track_clicks }}{{ 'clicks' if c.track_clicks else '' }}{{ 'off' if not c.track_opens and not c.track_clicks }}</dd>
+      </dl></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

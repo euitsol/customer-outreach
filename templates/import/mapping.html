@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Import · map columns{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('imports.upload') }}">Import</a> / {{ filename }}</div>
+<div class="page-head"><div><h1>Map columns</h1><div class="sub">{{ total_rows }} data rows found in <b>{{ filename }}</b>.</div></div></div>
+
+<form method="post" id="map-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid g-side" style="align-items:start">
+    <div class="stack">
+      <div class="card">
+        <div class="card-head"><h2>Columns</h2><span class="muted small">Check each column goes to the right place.</span></div>
+        <div class="table-wrap"><table class="tbl mapping-table">
+          <thead><tr><th>Column in your file</th><th>Example</th><th>Import as</th></tr></thead>
+          <tbody>
+          {% for h in headers %}{% set i = loop.index0 %}
+            <tr><td class="primary">{{ h }}</td>
+              <td class="sample-cell" title="{{ rows[0][i] if rows else '' }}">{{ (rows[0][i] if rows else '')|truncate(60) }}</td>
+              <td><select name="map_{{ i }}">
+                {% for key, label in targets %}<option value="{{ key }}" {{ 'selected' if mapping[i] == key }}>{{ label }}</option>{% endfor %}
+              </select></td></tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      </div>
+      {% if rows %}
+      <div class="card">
+        <div class="card-head"><h2>First rows</h2></div>
+        <div class="table-wrap"><table class="tbl tbl-compact"><thead><tr>{% for h in headers %}<th>{{ h|truncate(22) }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for r in rows %}<tr>{% for v in r %}<td class="sample-cell">{{ v|truncate(40) }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="stack" style="position:sticky;top:16px">
+      <div class="card card-pad">
+        <h2 class="mb2">Import settings</h2>
+        <div class="stack">
+          <div class="field"><span class="lbl">Campaign</span>
+            <select name="campaign_id"><option value="">+ New campaign…</option>
+              {% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if camp and camp.id == cp.id }}>{{ cp.name }}</option>{% endfor %}</select>
+            <input type="text" name="new_name" class="mt1" placeholder="New campaign name" value="{{ new_name }}"></div>
+          <label class="field"><span class="lbl">If an email already exists in the campaign</span>
+            <select name="mode">
+              <option value="upsert" {{ 'selected' if mode == 'upsert' }}>Update it with the file's values</option>
+              <option value="create_only" {{ 'selected' if mode == 'create_only' }}>Skip it (add new contacts only)</option>
+              <option value="update_only" {{ 'selected' if mode == 'update_only' }}>Only update existing (e.g. add personalised emails)</option>
+            </select>
+            <div class="hint">Empty cells never erase existing data. Stages that were already sent are never changed.</div></label>
+          <label class="check"><input type="checkbox" name="extra_custom" value="1" {{ 'checked' if extra_custom }}><span>Keep "Custom merge field" columns<div class="hint">Make them available as <code>{{ '{{column_name}}' }}</code>.</div></span></label>
+        </div>
+        <div class="form-actions"><button class="btn">Update preview</button></div>
+      </div>
+
+      <div class="card card-pad">
+        <h2 class="mb1">Preview</h2>
+        {% for p in problems %}<div class="flash warn mb1"><span>{{ p }}</span></div>{% endfor %}
+        {% if preview %}
+          <dl class="kv" style="grid-template-columns:150px 1fr">
+            <dt>New contacts</dt><dd><b>{{ preview.stats.creates }}</b></dd>
+            <dt>Will be updated</dt><dd><b>{{ preview.stats.updates }}</b></dd>
+            <dt>With personalised text</dt><dd>{{ preview.stats.customised }}</dd>
+            {% if preview.stats.skip_existing %}<dt>Skipped (exist)</dt><dd>{{ preview.stats.skip_existing }}</dd>{% endif %}
+            {% if preview.stats.skip_missing %}<dt>Skipped (not found)</dt><dd>{{ preview.stats.skip_missing }}</dd>{% endif %}
+            {% if preview.stats.skip_dnr %}<dt>Marked "do not send"</dt><dd>{{ preview.stats.skip_dnr }}</dd>{% endif %}
+            {% if preview.stats.dupes_in_file %}<dt>Duplicates in file</dt><dd>{{ preview.stats.dupes_in_file }}</dd>{% endif %}
+            <dt>Rows with problems</dt><dd style="{{ 'color:var(--bad)' if preview.error_count }}">{{ preview.error_count }}</dd>
+          </dl>
+          {% if preview.errors %}
+          <details class="fold mt2"><summary>Show problems</summary>
+            <ul class="small" style="padding-left:16px;margin:0;max-height:200px;overflow:auto">{% for e in preview.errors %}<li>Row {{ e.row }}{% if e.email %} ({{ e.email }}){% endif %}: {{ e.error }}</li>{% endfor %}</ul></details>
+          {% endif %}
+          {% if preview.sample %}
+          <details class="fold mt1"><summary>Sample of what will be imported</summary>
+            <ul class="small" style="padding-left:16px;margin:0">{% for em, fn, co, steps, existing in preview.sample %}<li>{{ em }} {{ '(update)' if existing else '(new)' }}{% if steps %} · personalised stage{{ 's' if steps|length > 1 }} {{ steps|join(', ') }}{% endif %}</li>{% endfor %}</ul></details>
+          {% endif %}
+          <div class="form-actions">
+            <button class="btn btn-primary" name="confirm" value="1" data-once="1" {{ 'disabled' if (preview.stats.creates + preview.stats.updates) == 0 }}>Import {{ preview.stats.creates + preview.stats.updates }} contact{{ 's' if (preview.stats.creates + preview.stats.updates) != 1 }}</button>
+            <a class="btn btn-ghost" href="{{ url_for('imports.upload') }}">Cancel</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

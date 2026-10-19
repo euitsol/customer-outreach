@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Settings</h1><div class="sub">Sending pace, retries and tracking. Changes apply to the worker immediately.</div></div></div>
+
+<div class="grid g-side" style="align-items:start">
+<form method="post" class="stack">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="card card-pad">
+    <div class="row" style="justify-content:space-between">
+      <div><h2>Sending</h2><p class="muted small" style="margin:2px 0 0">Master switch for the whole worker.</p></div>
+      <label class="check"><input type="checkbox" name="sending_paused" value="1" {{ 'checked' if s.sending_paused }}><span><b>Pause all sending</b></span></label>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="mb2">Pace</h2>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Wait between emails: at least (seconds)</span><input type="number" min="0" name="min_delay" value="{{ s.min_delay }}"></label>
+      <label class="field"><span class="lbl">…and at most (seconds)</span><input type="number" min="0" name="max_delay" value="{{ s.max_delay }}"><div class="hint">A random wait in this range follows every email, so sending looks human.</div></label>
+      <label class="field"><span class="lbl">Daily limit (all campaigns)</span><input type="number" min="0" name="daily_limit" value="{{ s.daily_limit }}"><div class="hint">Counted from midnight in your timezone. New mailboxes should stay low (20-50) and ramp up.</div></label>
+      <label class="field"><span class="lbl">Check for work every (seconds)</span><input type="number" min="10" name="poll_interval" value="{{ s.poll_interval }}"><div class="hint">Also how often replies are checked. Lower = faster response to "Send now".</div></label>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="mb2">Send window</h2>
+    <div class="form-grid">
+      <label class="check full"><input type="checkbox" name="window_enabled" value="1" {{ 'checked' if s.window_enabled }}><span><b>Only send during these hours</b><div class="hint">Emails due outside the window wait for the next opening.</div></span></label>
+      <label class="field"><span class="lbl">From</span><input type="time" name="window_start" value="{{ s.window_start }}"></label>
+      <label class="field"><span class="lbl">Until</span><input type="time" name="window_end" value="{{ s.window_end }}"></label>
+      <label class="check"><input type="checkbox" name="weekdays_only" value="1" {{ 'checked' if s.weekdays_only }}><span>Monday to Friday only</span></label>
+      <label class="field"><span class="lbl">Timezone</span>
+        <input type="text" name="timezone" list="tz-list" value="{{ s.timezone }}"><datalist id="tz-list">{% for z in zones %}<option value="{{ z }}">{% endfor %}</datalist></label>
+    </div>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="mb2">Failures &amp; retries</h2>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Attempts per email before it needs a manual retry</span><input type="number" min="1" max="20" name="retry_max" value="{{ s.retry_max }}"></label>
+      <label class="field"><span class="lbl">Pause between attempts (minutes)</span><input type="number" min="1" name="retry_backoff" value="{{ s.retry_backoff }}"><div class="hint">Multiplied by the attempt number: 30, 60, 90…</div></label>
+    </div>
+    <p class="hint">Rejected addresses are not retried: they're marked bounced. If the mail server itself is unreachable the worker waits 5 minutes and tries again without using up attempts.</p>
+  </div>
+
+  <div class="card card-pad">
+    <h2 class="mb2">Sender identity &amp; footer</h2>
+    <div class="form-grid">
+      <label class="field"><span class="lbl">Sender display name</span><input type="text" name="sender_name" value="{{ s.sender_name }}"><div class="hint">Sent from <code>{{ config.SENDER_EMAIL or 'SENDER_EMAIL not set' }}</code> (set in .env).</div></label>
+      <label class="field"><span class="lbl">Reply-To address <span class="faint">(optional)</span></span><input type="email" name="reply_to" value="{{ s.reply_to }}"></label>
+      <label class="field full"><span class="lbl">Signature appended to every email <span class="faint">(optional)</span></span><textarea name="signature" rows="4" placeholder="Al Kafi&#10;EUITSols · euitsols.com">{{ s.signature }}</textarea></label>
+      <label class="check full"><input type="checkbox" name="footer_enabled" value="1" {{ 'checked' if s.footer_enabled }}><span><b>Add an unsubscribe footer</b><div class="hint">Strongly recommended: required by GDPR/PECR for marketing email. A one-click <code>List-Unsubscribe</code> header is always added.</div></span></label>
+      <label class="field"><span class="lbl">Footer text</span><input type="text" name="footer_text" value="{{ s.footer_text }}"></label>
+      <label class="field"><span class="lbl">Postal address in footer <span class="faint">(optional)</span></span><input type="text" name="footer_address" value="{{ s.footer_address }}" placeholder="EUITSols, Naas, Co. Kildare, Ireland"></label>
+      <label class="check"><input type="checkbox" name="track_opens" value="1" {{ 'checked' if s.track_opens }}><span>Track opens</span></label>
+      <label class="check"><input type="checkbox" name="track_clicks" value="1" {{ 'checked' if s.track_clicks }}><span>Track link clicks</span></label>
+    </div>
+  </div>
+  <div class="form-actions" style="margin-top:0"><button class="btn btn-primary">Save settings</button></div>
+</form>
+
+<div class="stack">
+  <div class="card card-pad">
+    <h2 class="mb1">Connections</h2>
+    <p class="muted small">Credentials live in the server's <code>.env</code> file (never shown here).</p>
+    <dl class="kv">
+      <dt>SMTP</dt><dd><span class="status-dot {{ 'good' if smtp_ok else 'bad' }}"></span>{{ config.SMTP_HOST ~ ':' ~ config.SMTP_PORT if smtp_ok else 'not configured' }}</dd>
+      <dt>IMAP</dt><dd><span class="status-dot {{ 'good' if health.imap_configured else 'warn' }}"></span>{{ config.IMAP_HOST if health.imap_configured else 'not configured' }}</dd>
+      <dt>Tracking URL</dt><dd class="mono" style="word-break:break-all">{{ config.TRACK_BASE_URL }}</dd>
+      <dt>Worker</dt><dd><span class="status-dot {{ 'good' if health.worker_alive else 'bad' }}"></span>{{ health.worker_status }}</dd>
+      <dt>Replies</dt><dd>{{ health.reply_status }}</dd>
+    </dl>
+    <form method="post" action="{{ url_for('admin.test_smtp') }}" class="mt2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <span class="lbl">Send a test email through SMTP</span>
+      <div class="row"><input type="email" name="to" placeholder="you@example.com" style="flex:1;min-width:0" required><button class="btn" data-once="1">Send</button></div>
+    </form>
+    <form method="post" action="{{ url_for('admin.test_imap') }}" class="mt2"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn">Test IMAP login</button></form>
+  </div>
+  <div class="card card-pad">
+    <h2 class="mb1">Good to know</h2>
+    <ul class="small muted" style="padding-left:18px;margin:0">
+      <li>Replies stop a contact's sequence. Auto-replies ("out of office") are ignored.</li>
+      <li>Bounce notices mark the address as bounced and add it to the do-not-contact list.</li>
+      <li>Unsubscribes apply across every campaign for that address.</li>
+      <li>Server credentials, domain and ports are changed in <code>.env</code>, then <code>./deploy.sh</code>.</li>
+    </ul>
+  </div>
+</div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pager %}
+{% block title %}Do not contact{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Do not contact</h1>
+  <div class="sub">Addresses and domains that never receive email from any campaign. Unsubscribes and hard bounces are added automatically.</div></div></div>
+<div class="grid g-side" style="align-items:start">
+  <div class="card">
+    <form class="filters" method="get"><label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ term }}" placeholder="Address or domain"></label><button class="btn">Search</button></form>
+    {% if page.items %}
+    <div class="table-wrap"><table class="tbl tbl-compact">
+      <thead><tr><th>Entry</th><th>Type</th><th>Reason</th><th>Added</th><th></th></tr></thead>
+      <tbody>{% for r in page.items %}
+        <tr><td class="primary">{{ r.value }}</td><td>{{ r.kind }}</td><td class="muted">{{ r.reason or '' }}</td><td class="muted">{{ r.created_at|day }}</td>
+          <td class="right"><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove"><input type="hidden" name="id" value="{{ r.id }}"><button class="btn btn-sm btn-ghost" data-confirm="Remove {{ r.value }} from the list?">Remove</button></form></td></tr>
+      {% endfor %}</tbody></table></div>
+    {{ pager(page, request.args, url_for('admin.suppression')) }}
+    {% else %}<div class="empty"><h3>The list is empty</h3><p>Nobody is blocked yet.</p></div>{% endif %}
+  </div>
+  <form method="post" class="card card-pad">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="add">
+    <h2 class="mb2">Add entries</h2>
+    <label class="field"><span class="lbl">Emails or domains</span><textarea name="values" rows="5" placeholder="jane@example.com&#10;competitor.com"></textarea><div class="hint">One per line. A bare domain blocks everyone at that domain.</div></label>
+    <label class="field mt1"><span class="lbl">Reason</span><input type="text" name="reason" placeholder="Asked not to be contacted"></label>
+    <div class="form-actions"><button class="btn btn-primary">Add to list</button></div>
+  </form>
+</div>
+{% endblock %}
