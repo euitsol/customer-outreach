@@ -46,7 +46,8 @@ def prepare_bodies(session, body_text, contact_id, stage, open_token, unsub_toke
     sig = (opts.get("signature") or "").strip()
     text_body = body_text.rstrip()
     if sig:
-        text_body += "\n\n" + sig
+        # directly under a sign-off such as "Best regards," otherwise after a blank line
+        text_body += ("\n" if text_body.endswith(",") else "\n\n") + sig
 
     plain_parts, html_parts, last = [], [], 0
     for m in URL_RE.finditer(text_body):
