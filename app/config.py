@@ -20,7 +20,3 @@ MIN_DELAY_SECONDS = int(os.environ.get("MIN_DELAY_SECONDS", 25))
 MAX_DELAY_SECONDS = int(os.environ.get("MAX_DELAY_SECONDS", 75))
 MAX_PER_DAY = int(os.environ.get("MAX_PER_DAY", 80))
 CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", 120))
-
-SHEET_ID = os.environ.get("SHEET_ID")
-CAMPAIGN_NAME = os.environ.get("CAMPAIGN_NAME", "Default Campaign")
-SHEET_SYNC_INTERVAL_SECONDS = int(os.environ.get("SHEET_SYNC_INTERVAL_SECONDS", 600))

@@ -16,7 +16,7 @@ services:
     command: gunicorn -w 2 -b 0.0.0.0:8000 app.web:app
     env_file: .env
     ports:
-      - "127.0.0.1:8091:8000"   # CyberPanel reverse-proxies to this
+      - "127.0.0.1:8091:8000"
     depends_on:
       - db
 
@@ -32,14 +32,6 @@ services:
     build: .
     restart: unless-stopped
     command: python -m app.reply_checker
-    env_file: .env
-    depends_on:
-      - db
-
-  sheet_sync:
-    build: .
-    restart: unless-stopped
-    command: python -m app.sheet_sync
     env_file: .env
     depends_on:
       - db

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mail Campaign Suite</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css">
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+<nav class="bg-slate-800 text-white px-6 py-4 flex gap-6">
+  <span class="font-bold">Mail Campaign Suite</span>
+  <button class="tab-btn" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="contacts">Contacts</button>
+  <button class="tab-btn" data-tab="campaigns">Campaigns</button>
+  <button class="tab-btn" data-tab="send">Send</button>
+</nav>
+
+<main class="p-6">
+
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard" class="tab-section">
+    <h2 class="text-xl font-bold mb-4">Service Health</h2>
+    <div id="health-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"></div>
+
+    <h2 class="text-xl font-bold mb-4">Stats</h2>
+    <div id="stat-cards" class="grid grid-cols-2 md:grid-cols-5 gap-4"></div>
+  </section>
+
+  <!-- CONTACTS -->
+  <section id="tab-contacts" class="tab-section hidden">
+    <div class="flex gap-3 mb-4">
+      <button id="btn-import" class="bg-blue-600 text-white px-4 py-2 rounded">Import CSV</button>
+      <button id="btn-export" class="bg-gray-600 text-white px-4 py-2 rounded">Export CSV</button>
+      <a href="/api/contacts/demo" class="bg-green-600 text-white px-4 py-2 rounded">Download Demo CSV</a>
+      <button id="btn-make-campaign" class="bg-purple-600 text-white px-4 py-2 rounded">Create Campaign from Selected</button>
+    </div>
+    <table id="contacts-table" class="display w-full">
+      <thead><tr>
+        <th></th><th>Company</th><th>Name</th><th>Email</th><th>Priority</th>
+        <th>Send?</th><th>Stage</th><th>Opened</th><th>Clicked</th><th>Replied</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- CAMPAIGNS -->
+  <section id="tab-campaigns" class="tab-section hidden">
+    <h2 class="text-xl font-bold mb-4">Campaigns</h2>
+    <table id="campaigns-table" class="display w-full">
+      <thead><tr><th>ID</th><th>Name</th><th>Contacts</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <!-- SEND -->
+  <section id="tab-send" class="tab-section hidden">
+    <h2 class="text-xl font-bold mb-4">Manual Send / Preview</h2>
+    <p class="mb-3 text-sm text-gray-600">Select a contact's row checkbox in the Contacts tab, then come here.</p>
+    <div id="send-selected-list" class="space-y-2 mb-4"></div>
+    <button id="btn-dry-run" class="bg-amber-600 text-white px-4 py-2 rounded">Preview (dry run)</button>
+    <button id="btn-real-send" class="bg-red-600 text-white px-4 py-2 rounded">Send for real</button>
+    <pre id="send-result" class="bg-white p-4 mt-4 rounded border"></pre>
+  </section>
+
+</main>
+
+<!-- IMPORT MODAL -->
+<div id="import-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center">
+  <div class="bg-white p-6 rounded w-96">
+    <h3 class="font-bold mb-3">Import Contacts</h3>
+    <input type="file" id="import-file" accept=".csv" class="mb-3 w-full">
+    <select id="import-campaign" class="mb-3 w-full border p-2"></select>
+    <input type="text" id="import-new-campaign" placeholder="Or new campaign name" class="mb-3 w-full border p-2">
+    <label class="flex items-center gap-2 mb-3">
+      <input type="checkbox" id="import-dry-run" checked> Dry run (preview only, no changes)
+    </label>
+    <div class="flex gap-2">
+      <button id="btn-do-import" class="bg-blue-600 text-white px-4 py-2 rounded">Run</button>
+      <button id="btn-close-import" class="bg-gray-300 px-4 py-2 rounded">Close</button>
+    </div>
+    <pre id="import-result" class="mt-3 text-xs bg-gray-50 p-2 rounded max-h-60 overflow-auto"></pre>
+  </div>
+</div>
+
+<!-- CAMPAIGN MODAL -->
+<div id="campaign-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center">
+  <div class="bg-white p-6 rounded w-96">
+    <h3 class="font-bold mb-3">Create Campaign</h3>
+    <p class="mb-2 text-sm">Selected contacts: <span id="selected-count">0</span></p>
+    <input type="text" id="new-campaign-name" placeholder="Campaign name" class="mb-3 w-full border p-2">
+    <div class="flex gap-2">
+      <button id="btn-save-campaign" class="bg-purple-600 text-white px-4 py-2 rounded">Create</button>
+      <button id="btn-close-campaign" class="bg-gray-300 px-4 py-2 rounded">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let selectedIds = [];
+
+$(".tab-btn").click(function () {
+  $(".tab-section").addClass("hidden");
+  $("#tab-" + $(this).data("tab")).removeClass("hidden");
+  if ($(this).data("tab") === "dashboard") loadHealth();
+  if ($(this).data("tab") === "campaigns") loadCampaigns();
+});
+$(".tab-btn").first().click();
+
+function loadHealth() {
+  $.getJSON("/api/health", function (d) {
+    const items = [
+      ["Database", d.database], ["SMTP", d.smtp], ["IMAP", d.imap],
+      ["Worker last active (min ago)", d.worker_last_activity_minutes_ago]
+    ];
+    $("#health-cards").html(items.map(([label, val]) => {
+      const ok = String(val).includes("ok") || typeof val === "number";
+      return `<div class="p-4 rounded shadow bg-white border-l-4 ${ok ? 'border-green-500' : 'border-red-500'}">
+                <div class="text-sm text-gray-500">${label}</div>
+                <div class="font-bold">${val}</div></div>`;
+    }).join(""));
+  });
+  $.getJSON("/api/stats", function (d) {
+    $("#stat-cards").html(Object.entries(d).map(([k, v]) =>
+      `<div class="p-4 rounded shadow bg-white">
+         <div class="text-sm text-gray-500 capitalize">${k}</div>
+         <div class="text-2xl font-bold">${v}</div></div>`).join(""));
+  });
+}
+setInterval(() => { if (!$("#tab-dashboard").hasClass("hidden")) loadHealth(); }, 15000);
+
+let contactsTable;
+function loadContacts() {
+  $.getJSON("/api/contacts", function (rows) {
+    if (contactsTable) contactsTable.destroy();
+    $("#contacts-table tbody").empty();
+    rows.forEach(r => {
+      $("#contacts-table tbody").append(`<tr>
+        <td><input type="checkbox" class="row-check" data-id="${r.id}"></td>
+        <td>${r.company || ""}</td><td>${(r.first_name||"")+" "+(r.last_name||"")}</td>
+        <td>${r.email}</td><td>${r.priority || ""}</td>
+        <td>${r.send_flag ? "Send" : "No"}</td><td>${r.stage}</td>
+        <td>${r.opened ? "✅" : ""}</td><td>${r.clicked ? "✅" : ""}</td><td>${r.replied ? "✅" : ""}</td>
+      </tr>`);
+    });
+    contactsTable = $("#contacts-table").DataTable();
+  });
+}
+loadContacts();
+
+$(document).on("change", ".row-check", function () {
+  const id = parseInt($(this).data("id"));
+  if (this.checked) { if (!selectedIds.includes(id)) selectedIds.push(id); }
+  else { selectedIds = selectedIds.filter(x => x !== id); }
+  $("#selected-count").text(selectedIds.length);
+  $("#send-selected-list").html(selectedIds.map(id => `<div>Contact #${id}</div>`).join(""));
+});
+
+$("#btn-import").click(function () {
+  $("#import-modal").removeClass("hidden");
+  $.getJSON("/api/campaigns", function (camps) {
+    $("#import-campaign").html('<option value="">-- select existing campaign --</option>' +
+      camps.map(c => `<option value="${c.id}">${c.name} (${c.contact_count})</option>`).join(""));
+  });
+});
+$("#btn-close-import").click(() => $("#import-modal").addClass("hidden"));
+
+$("#btn-do-import").click(function () {
+  const fd = new FormData();
+  fd.append("file", $("#import-file")[0].files[0]);
+  fd.append("dry_run", $("#import-dry-run").is(":checked"));
+  const campId = $("#import-campaign").val();
+  if (campId) fd.append("campaign_id", campId);
+  else fd.append("campaign_name", $("#import-new-campaign").val());
+
+  $.ajax({
+    url: "/api/contacts/import", type: "POST", data: fd, processData: false, contentType: false,
+    success: function (res) {
+      $("#import-result").text(JSON.stringify(res, null, 2));
+      if (!res.dry_run) loadContacts();
+    },
+    error: function (xhr) { $("#import-result").text(xhr.responseText); }
+  });
+});
+
+$("#btn-export").click(() => window.location = "/api/contacts/export");
+
+$("#btn-make-campaign").click(() => {
+  $("#selected-count").text(selectedIds.length);
+  $("#campaign-modal").removeClass("hidden");
+});
+$("#btn-close-campaign").click(() => $("#campaign-modal").addClass("hidden"));
+$("#btn-save-campaign").click(function () {
+  $.ajax({
+    url: "/api/campaigns", type: "POST", contentType: "application/json",
+    data: JSON.stringify({ name: $("#new-campaign-name").val(), contact_ids: selectedIds }),
+    success: function () { $("#campaign-modal").addClass("hidden"); loadCampaigns(); loadContacts(); },
+    error: function (xhr) { alert(xhr.responseText); }
+  });
+});
+
+let campaignsTable;
+function loadCampaigns() {
+  $.getJSON("/api/campaigns", function (rows) {
+    if (campaignsTable) campaignsTable.destroy();
+    $("#campaigns-table tbody").empty();
+    rows.forEach(r => $("#campaigns-table tbody").append(
+      `<tr><td>${r.id}</td><td>${r.name}</td><td>${r.contact_count}</td></tr>`));
+    campaignsTable = $("#campaigns-table").DataTable();
+  });
+}
+
+function runSend(dryRun) {
+  if (!selectedIds.length) { alert("Select at least one contact in the Contacts tab."); return; }
+  const id = selectedIds[0]; // one at a time for manual testing
+  $.ajax({
+    url: `/api/contacts/${id}/send?dry_run=${dryRun}`, type: "POST",
+    success: res => $("#send-result").text(JSON.stringify(res, null, 2)),
+    error: xhr => $("#send-result").text(xhr.responseText)
+  });
+}
+$("#btn-dry-run").click(() => runSend(true));
+$("#btn-real-send").click(() => runSend(false));
+</script>
+</body>
+</html>
