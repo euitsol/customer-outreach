@@ -2,6 +2,7 @@ import io
 from datetime import datetime, timedelta
 
 from flask import Flask, Response, redirect, abort, request, jsonify, render_template, send_file
+from sqlalchemy import text
 
 from app.db import SessionLocal, init_db
 from app.models import Event, ClickLink, Contact, Campaign
@@ -68,7 +69,7 @@ def health():
     result = {}
     session = SessionLocal()
     try:
-        session.execute("SELECT 1")
+        session.execute(text("SELECT 1"))
         result["database"] = "ok"
     except Exception as e:
         result["database"] = f"error: {e}"
