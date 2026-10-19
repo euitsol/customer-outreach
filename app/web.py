@@ -78,8 +78,12 @@ def health():
 
     try:
         ctx = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5) as s:
-            s.starttls(context=ctx)
+        if SMTP_PORT == 465:
+            with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=5, context=ctx) as s:
+                pass
+        else:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=5) as s:
+                s.starttls(context=ctx)
         result["smtp"] = "ok"
     except Exception as e:
         result["smtp"] = f"error: {e}"
