@@ -1,3 +1,7 @@
+marketing.europeanit.academy {
+    reverse_proxy web:8000
+}
+
 track.euitsols.com {
     reverse_proxy web:8000
 }
