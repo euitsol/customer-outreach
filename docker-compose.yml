@@ -1,0 +1,48 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mailcampaign
+      POSTGRES_USER: mailcampaign
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: gunicorn -w 2 -b 0.0.0.0:8000 app.web:app
+    env_file: .env
+    ports:
+      - "127.0.0.1:8091:8000"   # CyberPanel reverse-proxies to this
+    depends_on:
+      - db
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: python -m app.worker
+    env_file: .env
+    depends_on:
+      - db
+
+  reply_checker:
+    build: .
+    restart: unless-stopped
+    command: python -m app.reply_checker
+    env_file: .env
+    depends_on:
+      - db
+
+  sheet_sync:
+    build: .
+    restart: unless-stopped
+    command: python -m app.sheet_sync
+    env_file: .env
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
