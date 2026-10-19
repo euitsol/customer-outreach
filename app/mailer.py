@@ -71,7 +71,7 @@ def send_stage_email(session, contact, stage, subject, body_text):
                 server.starttls(context=context)
                 server.login(SMTP_USER, SMTP_PASSWORD)
                 server.sendmail(SENDER_EMAIL, contact.email, msg.as_string())
-        session.add(Event(contact_id=contact.id, stage=stage, type="sent"))
+        session.add(Event(contact_id=contact.id, stage=stage, type="sent", detail=subject))
         return True, new_msgid
     except Exception as e:
         session.add(Event(contact_id=contact.id, stage=stage, type="failed", detail=str(e)))

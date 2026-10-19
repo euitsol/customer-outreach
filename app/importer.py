@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.db import SessionLocal, init_db
 from app.models import Campaign, Contact
+from app.services import add_tags
 
 REQUIRED_COLS = ["email"]
 VALID_SEND = {"send", "do not send", "verify email first", ""}
@@ -94,6 +95,9 @@ def validate_rows(rows, session, campaign_id):
             "followup2_body": row.get("followup2_body"),
             "followup2_date": fu2_date,
             "will_update": email in existing_emails,
+            "phone": row.get("phone"),
+            "notes": row.get("notes"),
+            "tags": row.get("tags"),
         })
     return valid, errors
 
@@ -107,6 +111,7 @@ def apply_rows(session, campaign, valid_rows):
 
         fields = dict(
             company=r["company"], first_name=r["first_name"], last_name=r["last_name"],
+            phone=r["phone"], notes=r["notes"],
             priority=r["priority"], subject=r["subject"], body1=r["email1_body"],
             body2=r["followup1_body"], body2_date=r["followup1_date"],
             body3=r["followup2_body"], body3_date=r["followup2_date"],
@@ -119,16 +124,49 @@ def apply_rows(session, campaign, valid_rows):
                 for k, v in fields.items():
                     setattr(existing, k, v)
                 existing.send_flag = True
+            if r["tags"]:
+                add_tags(session, existing, r["tags"])
             updated += 1
         else:
             if do_not_send:
                 continue
-            session.add(Contact(
-                campaign_id=campaign.id, email=r["email"], send_flag=True, stage=0, **fields
-            ))
+            c = Contact(campaign_id=campaign.id, email=r["email"], send_flag=True, stage=0, **fields)
+            session.add(c)
+            session.flush()
+            if r["tags"]:
+                add_tags(session, c, r["tags"])
             created += 1
     session.commit()
     return created, updated
+
+def export_csv(campaign_id=None):
+    init_db()
+    session = SessionLocal()
+    try:
+        q = session.query(Contact)
+        if campaign_id:
+            q = q.filter(Contact.campaign_id == campaign_id)
+        contacts = q.all()
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "company", "first_name", "last_name", "email", "phone", "priority", "send",
+            "subject", "email1_body", "followup1_body", "followup1_date",
+            "followup2_body", "followup2_date", "tags", "notes",
+            "stage", "replied", "unsubscribed",
+        ])
+        for c in contacts:
+            send_val = "Verify email first" if c.needs_verification else ("Send" if c.send_flag else "Do not send")
+            writer.writerow([
+                c.company, c.first_name, c.last_name, c.email, c.phone, c.priority, send_val,
+                c.subject, c.body1, c.body2, c.body2_date or "", c.body3, c.body3_date or "",
+                ",".join(sorted(t.name for t in c.tags)), c.notes,
+                c.stage, c.replied, c.unsubscribed,
+            ])
+        return buf.getvalue()
+    finally:
+        session.close()
 
 def run_import(csv_text, dry_run, campaign_id=None, campaign_name=None):
     init_db()
@@ -158,32 +196,5 @@ def run_import(csv_text, dry_run, campaign_id=None, campaign_name=None):
             "updated": updated,
             "errors": errors,
         }
-    finally:
-        session.close()
-
-def export_csv(campaign_id=None):
-    init_db()
-    session = SessionLocal()
-    try:
-        q = session.query(Contact)
-        if campaign_id:
-            q = q.filter(Contact.campaign_id == campaign_id)
-        contacts = q.all()
-
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        writer.writerow([
-            "company", "first_name", "last_name", "email", "priority", "send",
-            "subject", "email1_body", "followup1_body", "followup1_date",
-            "followup2_body", "followup2_date", "stage", "replied", "unsubscribed",
-        ])
-        for c in contacts:
-            send_val = "Verify email first" if c.needs_verification else ("Send" if c.send_flag else "Do not send")
-            writer.writerow([
-                c.company, c.first_name, c.last_name, c.email, c.priority, send_val,
-                c.subject, c.body1, c.body2, c.body2_date or "", c.body3, c.body3_date or "",
-                c.stage, c.replied, c.unsubscribed,
-            ])
-        return buf.getvalue()
     finally:
         session.close()
