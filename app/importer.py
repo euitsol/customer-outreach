@@ -52,6 +52,7 @@ def _sniff_csv(text):
     sample = text[:4000]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        dialect.doublequote = True
         return dialect
     except csv.Error:
         return csv.excel
