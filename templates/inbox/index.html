@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager, avatar, csrf_field %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head">
+  <div><h1>Inbox</h1><div class="sub">Replies to campaigns, WhatsApp chats and one-to-one emails, in one place.</div></div>
+  <div class="page-actions">
+    {% if not channels.whatsapp %}<a class="btn" href="{{ url_for('workspace.integrations') }}">{{ icon('whatsapp') }} Connect WhatsApp</a>{% endif %}
+  </div>
+</div>
+<div class="tabs">
+  {% for k, label in filters %}<a href="{{ url_for('inbox.index', status=k, channel=channel, mine='1' if mine else None) }}" class="{{ 'active' if status == k }}">{{ label }}</a>{% endfor %}
+  <span class="grow"></span>
+  <a href="{{ url_for('inbox.index', status=status) }}" class="{{ 'active' if not channel }}">All channels</a>
+  <a href="{{ url_for('inbox.index', status=status, channel='email') }}" class="{{ 'active' if channel == 'email' }}">Email</a>
+  <a href="{{ url_for('inbox.index', status=status, channel='whatsapp') }}" class="{{ 'active' if channel == 'whatsapp' }}">WhatsApp</a>
+  {% if current_user() %}<a href="{{ url_for('inbox.index', status=status, channel=channel, mine=None if mine else '1') }}" class="{{ 'active' if mine }}">Assigned to me</a>{% endif %}
+</div>
+
+<div class="card inbox">
+  <div class="inbox-list">
+    <form method="get" style="padding:10px 12px;border-bottom:1px solid var(--border)"><input type="hidden" name="status" value="{{ status }}">{% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
+      <input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Search name, email, phone"></form>
+    {% for cv in page.items %}{% set lm = last.get(cv.id) %}
+      <a class="inbox-item {{ 'active' if current and cv.id == current.id }} {{ 'unread' if cv.unread_count }}" href="{{ url_for('inbox.index', c=cv.id, status=status, channel=channel, q=args.get('q')) }}">
+        <div class="top"><span class="pill {{ cv.channel }} nodot">{{ 'WA' if cv.channel == 'whatsapp' else 'Email' }}</span><b>{{ cv.person.display_name }}</b><time>{{ cv.last_message_at|ago }}</time></div>
+        <div class="snip">{% if lm %}{{ '↩ ' if lm.direction == 'out' }}{{ (lm.body or (lm.sequence_message.sent_subject if lm.sequence_message else '') or lm.subject or '')|truncate(90) }}{% else %}{{ cv.subject or '' }}{% endif %}</div>
+      </a>
+    {% else %}
+      <div class="empty" style="padding:30px 16px"><h3>Nothing here</h3><p class="small">Replies to your campaigns and WhatsApp messages appear here automatically.</p></div>
+    {% endfor %}
+    {% if page.pages > 1 %}{{ pager(page, args, url_for('inbox.index')) }}{% endif %}
+  </div>
+
+  <div class="thread">
+    {% if current %}{% set person = current.person %}
+    <div class="thread-head">
+      {{ avatar(person.display_name) }}
+      <div class="grow"><a class="primary" href="{{ url_for('people.detail', person_id=person.id) }}"><b>{{ person.display_name }}</b></a>
+        <div class="small muted">{{ person.email if current.channel == 'email' else person.phone }}{% if person.company %} · {{ person.company.name }}{% endif %}{% if current.subject %} · {{ current.subject|truncate(60) }}{% endif %}</div></div>
+      {{ pill(current.status) }}
+      <form method="post" action="{{ url_for('inbox.set_status', conversation_id=current.id, back=status) }}" class="row">{{ csrf_field() }}
+        {% if users %}<select name="assignee_id" class="input-sm" style="width:auto" onchange="this.form.submit()"><option value="">Unassigned</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if current.assignee_id == u.id }}>{{ u.label }}</option>{% endfor %}</select>{% endif %}
+        {% if current.status != 'closed' %}<button class="btn btn-sm" name="status" value="closed">Close</button>{% else %}<button class="btn btn-sm" name="status" value="open">Re-open</button>{% endif %}
+        {% if current.status == 'open' %}<button class="btn btn-sm btn-ghost" name="status" value="pending" title="Waiting on them">Pending</button>{% endif %}
+      </form>
+    </div>
+    <div class="thread-body">
+      {% for m in thread %}{% set seq = m.sequence_message %}
+        <div class="bubble {{ m.direction }} {{ 'failed' if m.status == 'failed' }}">
+          {% if m.subject or (seq and seq.sent_subject) %}<div class="subj">{{ m.subject or seq.sent_subject }}</div>{% endif %}
+          {{- m.body or (seq.sent_body if seq else '') or '' -}}
+          <div class="meta">
+            <span>{{ (m.sent_at or m.created_at)|dt }}</span>
+            {% if m.sequence_message_id %}<span>campaign email, stage {{ seq.position if seq else '' }}</span>{% endif %}
+            {% if m.direction == 'out' %}<span>{{ m.status }}</span>{% if m.user %}<span>by {{ m.user.label }}</span>{% endif %}{% endif %}
+            {% if m.error %}<span style="color:var(--bad)">{{ m.error|truncate(160) }}</span>{% endif %}
+          </div>
+        </div>
+      {% else %}<p class="muted">No messages yet.</p>{% endfor %}
+    </div>
+    <div class="composer">
+      {% if current.channel == 'whatsapp' and not wa_window %}<div class="flash warn mb1"><span>More than 24 hours since {{ person.first_name or 'they' }} last wrote: WhatsApp only allows an approved template until they reply.</span></div>{% endif %}
+      <form method="post" action="{{ url_for('inbox.reply', conversation_id=current.id) }}" class="stack" data-channel-form data-channel="{{ current.channel }}">
+        {{ csrf_field() }}<input type="hidden" name="status" value="{{ status }}">
+        {% if current.channel == 'email' %}<input type="text" name="subject" placeholder="Subject (blank = Re: last message)">{% endif %}
+        <textarea name="body" placeholder="Reply to {{ person.first_name or person.display_name }}…"></textarea>
+        {% if current.channel == 'whatsapp' %}
+        <div class="row small">
+          <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in templates if t.channel == 'whatsapp' and t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endfor %}<option value="hello_world">hello_world (Meta sample)</option></select>
+          <input type="text" name="wa_language" value="en_US" style="max-width:90px">
+          <input type="text" name="wa_params" placeholder="template values separated by |" style="max-width:260px">
+        </div>
+        {% endif %}
+        <div class="row">
+          <button class="btn btn-primary" data-once="1">{{ icon('send') }} Send</button>
+          <label class="check small"><input type="checkbox" name="close" value="1"><span>and close</span></label>
+          <span class="grow"></span>
+          {% set tpl = templates|selectattr('channel', 'equalto', current.channel)|list %}
+          {% if tpl %}<select class="js-reply-template input-sm" style="width:auto"><option value="">Insert template…</option>{% for t in tpl %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>{% endif %}
+        </div>
+      </form>
+    </div>
+    {% else %}
+    <div class="empty"><h3>Select a conversation</h3><p>Or start one from a person's page.</p></div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

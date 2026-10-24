@@ -82,7 +82,7 @@
       <form method="post" action="{{ url_for('campaigns.step_test', cid=c.id, sid=st.id) }}" class="row">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="email" name="to" placeholder="you@example.com" style="max-width:280px" required>
-        <select name="contact_id" style="width:auto;max-width:240px"><option value="">Use sample data</option>{% for p in sample %}<option value="{{ p.id }}">Merge data of {{ p.email }}</option>{% endfor %}</select>
+        <select name="enrollment_id" style="width:auto;max-width:240px"><option value="">Use sample data</option>{% for p in sample %}<option value="{{ p.id }}">Merge data of {{ p.email }}</option>{% endfor %}</select>
         <button class="btn" data-once="1">Send test</button>
         <span class="hint">Sent immediately via your SMTP account, without tracking. Saved text only: save first.</span>
       </form>

@@ -11,16 +11,16 @@
     {% elif c.status == 'archived' %}
       <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="restore"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn">Restore</button></form>
     {% else %}
-      <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="start"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-good" data-confirm="Start sending? The worker will begin emailing every ready contact in this campaign, paced by your Settings.">{{ icon('play') }} {{ 'Resume' if c.status == 'paused' else 'Start campaign' }}</button></form>
+      <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="start"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-good" data-confirm="Start sending? The worker will begin emailing every ready person in this campaign, paced by your Settings.">{{ icon('play') }} {{ 'Resume' if c.status == 'paused' else 'Start campaign' }}</button></form>
     {% endif %}
     <a class="btn" href="{{ url_for('imports.upload', campaign=c.id) }}">{{ icon('upload') }} Import</a>
-    <a class="btn" href="{{ url_for('contacts.new', campaign=c.id) }}">{{ icon('plus') }} Add contact</a>
+    <a class="btn" href="{{ url_for('enrollments.new', campaign=c.id) }}">{{ icon('plus') }} Enroll someone</a>
   </div>
 </div>
 <div class="tabs">
   <a href="{{ url_for('campaigns.overview', cid=c.id) }}" class="{{ 'active' if tab == 'overview' }}">Overview</a>
   <a href="{{ url_for('campaigns.sequence', cid=c.id) }}" class="{{ 'active' if tab == 'sequence' }}">Sequence <span class="count">{{ steps|length }}</span></a>
-  <a href="{{ url_for('contacts.in_campaign', cid=c.id) }}" class="{{ 'active' if tab == 'contacts' }}">Contacts</a>
+  <a href="{{ url_for('enrollments.in_campaign', cid=c.id) }}" class="{{ 'active' if tab == 'enrollments' }}">Enrolled</a>
   <a href="{{ url_for('outbox.in_campaign', cid=c.id) }}" class="{{ 'active' if tab == 'outbox' }}">Outbox</a>
   <a href="{{ url_for('outbox.activity', campaign=c.id) }}">Activity</a>
   <a href="{{ url_for('campaigns.edit', cid=c.id) }}" class="{{ 'active' if tab == 'settings' }}">Settings</a>

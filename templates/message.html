@@ -2,7 +2,7 @@
 {% from "_macros.html" import pill %}
 {% block title %}Email to {{ c.email }}{% endblock %}
 {% block content %}
-<div class="crumbs"><a href="{{ url_for('contacts.detail', contact_id=c.id) }}">{{ c.email }}</a> / Stage {{ m.position }}</div>
+<div class="crumbs"><a href="{{ url_for('enrollments.detail', enrollment_id=c.id) }}">{{ c.email }}</a> / Stage {{ m.position }}</div>
 <div class="page-head"><div><h1>{{ subject or '(no subject)' }}</h1>
   <div class="sub">To {{ c.email }} · stage {{ m.position }} · {{ pill(m.status) }}{% if m.sent_at %} · sent {{ m.sent_at|dt }}{% endif %}</div></div></div>
 <div class="card card-pad" style="max-width:760px">

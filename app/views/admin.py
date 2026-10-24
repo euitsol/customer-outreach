@@ -9,13 +9,14 @@ from flask import (
 )
 from sqlalchemy import func, text
 
+from werkzeug.security import check_password_hash
+
 from app import config, mailer, settings as app_settings
+from app.clock import utcnow
 from app.mailer import SendError
-from app.models import Campaign, Contact, Suppression, Tag, Template, contact_tags
-from app.services import add_suppression, EMAIL_RE, normalise_suppression
-from app.views.common import (
-    db, err, form_bool, get_or_404, int_arg, ok, paginate, safe_next, settings_now, warn,
-)
+from app.models import Suppression, Tag, Template, User, company_tags, person_tags
+from app.services import EMAIL_RE, add_suppression
+from app.views.common import db, err, form_bool, get_or_404, int_arg, ok, paginate, safe_next, settings_now
 
 bp = Blueprint("admin", __name__)
 
@@ -24,9 +25,28 @@ _attempts = {}  # ip -> [timestamps]; per gunicorn worker, good enough to slow b
 
 # ------------------------------------------------------------------ auth + health
 
+def login_required():
+    """True when the panel needs a sign-in: an env admin password or at least one active user."""
+    if config.ADMIN_PASSWORD:
+        return True
+    try:
+        return db().query(User.id).filter(User.is_active == True).first() is not None  # noqa: E712
+    except Exception:
+        db().rollback()
+        return False
+
+
+def check_user(username, password):
+    u = db().query(User).filter(func.lower(User.email) == (username or "").strip().lower(),
+                                User.is_active == True).first()  # noqa: E712
+    if u and u.password_hash and check_password_hash(u.password_hash, password or ""):
+        return u
+    return None
+
+
 @bp.route("/login", methods=["GET", "POST"])
 def login():
-    if not config.ADMIN_PASSWORD:
+    if not login_required():
         return redirect(url_for("dashboard.index"))
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
     recent = [t for t in _attempts.get(ip, []) if time.time() - t < 600]
@@ -35,11 +55,18 @@ def login():
         if len(recent) >= 10:
             err("Too many attempts. Wait a few minutes.")
         else:
-            user_ok = hmac.compare_digest(request.form.get("username", ""), config.ADMIN_USER)
-            pass_ok = hmac.compare_digest(request.form.get("password", ""), config.ADMIN_PASSWORD)
-            if user_ok and pass_ok:
+            username, password = request.form.get("username", ""), request.form.get("password", "")
+            user = check_user(username, password)
+            env_ok = bool(config.ADMIN_PASSWORD) and hmac.compare_digest(username, config.ADMIN_USER) \
+                and hmac.compare_digest(password, config.ADMIN_PASSWORD)
+            if user or env_ok:
                 flask_session.clear()
                 flask_session["auth"] = True
+                flask_session["login"] = user.email if user else config.ADMIN_USER
+                if user:
+                    flask_session["uid"] = user.id
+                    user.last_login_at = utcnow()
+                    db().commit()
                 flask_session.permanent = True
                 _attempts.pop(ip, None)
                 return redirect(safe_next(url_for("dashboard.index")))
@@ -157,6 +184,13 @@ def test_imap():
 
 # ------------------------------------------------------------------ tags
 
+def _retag(sess, table, key, source_id, target_id):
+    for (rid,) in sess.query(table.c[key]).filter(table.c.tag_id == source_id).all():
+        if not sess.query(table).filter(table.c[key] == rid, table.c.tag_id == target_id).first():
+            sess.execute(table.insert().values(**{key: rid, "tag_id": target_id}))
+    sess.execute(table.delete().where(table.c.tag_id == source_id))
+
+
 @bp.route("/tags", methods=["GET", "POST"])
 def tags():
     sess = db()
@@ -164,7 +198,8 @@ def tags():
         act = request.form.get("action")
         tag = get_or_404(Tag, int_arg("tag_id", 0, request.form))
         if act == "delete":
-            sess.execute(contact_tags.delete().where(contact_tags.c.tag_id == tag.id))
+            sess.execute(person_tags.delete().where(person_tags.c.tag_id == tag.id))
+            sess.execute(company_tags.delete().where(company_tags.c.tag_id == tag.id))
             sess.delete(tag)
             ok(f"Tag '{tag.name}' deleted.")
         elif act == "rename":
@@ -173,20 +208,22 @@ def tags():
             if not new:
                 err("Name can't be empty.")
             elif other:  # merge into the existing tag
-                for (cid,) in sess.query(contact_tags.c.contact_id).filter(contact_tags.c.tag_id == tag.id).all():
-                    exists = sess.query(contact_tags).filter_by(contact_id=cid, tag_id=other.id).first()
-                    if not exists:
-                        sess.execute(contact_tags.insert().values(contact_id=cid, tag_id=other.id))
-                sess.execute(contact_tags.delete().where(contact_tags.c.tag_id == tag.id))
+                _retag(sess, person_tags, "person_id", tag.id, other.id)
+                _retag(sess, company_tags, "company_id", tag.id, other.id)
                 sess.delete(tag)
                 ok(f"Merged into '{other.name}'.")
             else:
                 tag.name = new
                 ok("Tag renamed.")
+        elif act == "color":
+            tag.color = (request.form.get("color") or "").strip()[:20] or None
+            ok("Colour saved.")
         sess.commit()
         return redirect(url_for("admin.tags"))
-    counts = dict(sess.query(contact_tags.c.tag_id, func.count()).group_by(contact_tags.c.tag_id).all())
-    rows = [(t, counts.get(t.id, 0)) for t in sess.query(Tag).order_by(Tag.name).all()]
+    people_counts = dict(sess.query(person_tags.c.tag_id, func.count()).group_by(person_tags.c.tag_id).all())
+    company_counts = dict(sess.query(company_tags.c.tag_id, func.count()).group_by(company_tags.c.tag_id).all())
+    rows = [(t, people_counts.get(t.id, 0), company_counts.get(t.id, 0))
+            for t in sess.query(Tag).order_by(Tag.name).all()]
     return render_template("tags.html", rows=rows)
 
 
@@ -241,6 +278,12 @@ def templates():
             if t is None:
                 t = Template()
             t.name = name
+            t.channel = request.form.get("channel") if request.form.get("channel") in ("email", "whatsapp") else "email"
+            meta = {}
+            if t.channel == "whatsapp":
+                meta = {"wa_template": (request.form.get("wa_template") or "").strip(),
+                        "language": (request.form.get("wa_language") or "en_US").strip()}
+            t.meta = meta or None
             t.subject = (request.form.get("subject") or "").strip() or None
             t.body = (request.form.get("body") or "").rstrip() or None
             sess.add(t)
@@ -255,4 +298,4 @@ def templates():
 @bp.route("/templates/<int:tid>.json")
 def template_json(tid):
     t = get_or_404(Template, tid)
-    return jsonify(subject=t.subject or "", body=t.body or "")
+    return jsonify(subject=t.subject or "", body=t.body or "", channel=t.channel, meta=t.meta or {})

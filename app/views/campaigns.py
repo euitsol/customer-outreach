@@ -1,20 +1,17 @@
-import json
-
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
-from sqlalchemy import and_, func, or_
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from app import merge, settings as app_settings
 from app.mailer import SendError, smtp_configured
-from app.models import Campaign, CampaignStep, Contact, Message, Template
+from app.models import Campaign, CampaignStep, Company, CustomField, Enrollment, Message, Person, Template
 from app.queries import campaign_summaries, daily_activity, engagement_stats, stage_stats, status_counts
 from app.sender import render_for, send_test
 from app.services import (
-    cancel_queued, content_for, create_default_steps, delete_campaign, duplicate_campaign, queue_next,
+    cancel_queued, create_default_steps, delete_campaign, duplicate_campaign, queue_next,
     recompute_campaign, renumber_steps, retry_failed, set_campaign_status, steps_of,
 )
-from app.views.common import (
-    back, db, err, form_bool, get_or_404, int_arg, ok, paginate, settings_now, warn,
-)
+from app.views.common import back, db, err, form_bool, get_or_404, int_arg, ok, settings_now, warn
 
 bp = Blueprint("campaigns", __name__)
 
@@ -22,18 +19,31 @@ STATUS_ORDER = ["active", "paused", "draft", "archived"]
 
 
 def campaign_vars(session, campaign_id):
-    """All merge fields available in this campaign (built-ins + imported custom columns)."""
+    """Extra merge fields available in this campaign: imported columns + person/company custom fields."""
     keys = []
-    rows = (session.query(Contact.custom).filter(Contact.campaign_id == campaign_id, Contact.custom.isnot(None))
-            .limit(500).all())
-    for (raw,) in rows:
-        try:
-            for k in json.loads(raw):
-                if k not in keys:
-                    keys.append(k)
-        except (ValueError, TypeError):
-            pass
+    rows = (session.query(Enrollment.variables)
+            .filter(Enrollment.campaign_id == campaign_id, Enrollment.variables.isnot(None)).limit(500).all())
+    for (data,) in rows:
+        for k in (data or {}):
+            if k not in keys:
+                keys.append(k)
+    for (k,) in session.query(CustomField.key).filter(CustomField.entity.in_(("person", "company"))):
+        if k not in keys:
+            keys.append(k)
+    if "website" not in keys:
+        keys.append("website")
     return keys
+
+
+def sample_enrollment(session, cid, enrollment_id=None):
+    """A real enrollment of this campaign for previews, or a made-up one."""
+    e = session.get(Enrollment, enrollment_id) if enrollment_id else None
+    if e is not None and e.campaign_id == cid:
+        return e
+    company = Company(name="Example Ltd", website="https://example.com", domain="example.com", attributes={})
+    person = Person(first_name="Alex", last_name="Sample", email="alex@example.com", phone="+353 1 000 0000",
+                    job_title="Owner", company=company, attributes={})
+    return Enrollment(campaign_id=cid, email="alex@example.com", person=person, variables=None)
 
 
 def _form_int(name, minimum=0):
@@ -114,10 +124,10 @@ def overview(cid):
     first = steps[0] if steps else None
     no_content = 0
     if first:
-        has_custom = (sess.query(Message.contact_id).filter(
+        has_custom = (sess.query(Message.enrollment_id).filter(
             Message.step_id == first.id, func.coalesce(Message.body, "") != ""))
-        q = sess.query(func.count(Contact.id)).filter(Contact.campaign_id == cid, Contact.stage == 0,
-                                                       ~Contact.id.in_(has_custom))
+        q = sess.query(func.count(Enrollment.id)).filter(Enrollment.campaign_id == cid, Enrollment.stage == 0,
+                                                          ~Enrollment.id.in_(has_custom))
         no_content = q.scalar() if not (first.body or "").strip() else 0
     return render_template("campaigns/overview.html", c=c, steps=steps, tab="overview", counts=counts, eng=eng,
                            stages=stages, activity=activity, peak=peak, no_content=no_content,
@@ -185,7 +195,7 @@ def edit(cid):
             sess.commit()
             ok("Campaign settings saved.")
             return redirect(url_for("campaigns.edit", cid=cid))
-    n_contacts = sess.query(func.count(Contact.id)).filter(Contact.campaign_id == cid).scalar() or 0
+    n_contacts = sess.query(func.count(Enrollment.id)).filter(Enrollment.campaign_id == cid).scalar() or 0
     return render_template("campaigns/edit.html", c=c, steps=steps_of(sess, cid), tab="settings", s=s,
                            start_value=app_settings.to_local_input(c.start_at, s), n_contacts=n_contacts)
 
@@ -229,7 +239,8 @@ def sequence(cid):
                         .group_by(Message.step_id).all())
     custom_keys = campaign_vars(sess, cid)
     variables = merge.BUILTIN_VARS + [k for k in custom_keys if k not in merge.BUILTIN_VARS]
-    sample = sess.query(Contact).filter(Contact.campaign_id == cid).order_by(Contact.id).limit(20).all()
+    sample = (sess.query(Enrollment).filter(Enrollment.campaign_id == cid)
+              .options(selectinload(Enrollment.person)).order_by(Enrollment.id).limit(20).all())
     templates = sess.query(Template).order_by(Template.name).all()
     unknown = {}
     for st in steps:
@@ -342,11 +353,7 @@ def step_preview(cid, sid):
     if st.campaign_id != cid:
         abort(404)
     steps = steps_of(sess, cid)
-    contact_id = int_arg("contact_id")
-    contact = sess.get(Contact, contact_id) if contact_id else None
-    if contact is None or contact.campaign_id != cid:
-        contact = Contact(campaign_id=cid, email="alex@example.com", first_name="Alex", last_name="Sample",
-                          company="Example Ltd", phone="+353 1 000 0000")
+    enrollment = sample_enrollment(sess, cid, int_arg("enrollment_id") or int_arg("contact_id"))
     # allow previewing unsaved edits from the form
     over_subject, over_body = request.args.get("subject"), request.args.get("body")
     if over_subject is not None or over_body is not None:
@@ -355,10 +362,11 @@ def step_preview(cid, sid):
                              body=over_body if over_body is not None else st.body)
         steps = [probe if x.id == st.id else x for x in steps]
         st = probe
-    subject, body = render_for(sess, contact, st, steps, None if not contact.id else
-                               sess.query(Message).filter_by(contact_id=contact.id, step_id=sid).first(),
-                               c, settings_now())
-    return jsonify({"subject": subject, "body": body, "to": contact.email})
+    with sess.no_autoflush:
+        subject, body = render_for(sess, enrollment, st, steps, None if not enrollment.id else
+                                   sess.query(Message).filter_by(enrollment_id=enrollment.id, step_id=sid).first(),
+                                   c, settings_now())
+    return jsonify({"subject": subject, "body": body, "to": enrollment.email})
 
 
 @bp.route("/campaigns/<int:cid>/steps/<int:sid>/test", methods=["POST"])
@@ -370,12 +378,11 @@ def step_test(cid, sid):
     if "@" not in to:
         err("Enter an email address to send the test to.")
         return redirect(url_for("campaigns.sequence", cid=cid) + f"#stage-{st.position}")
-    contact = sess.get(Contact, int_arg("contact_id", 0, request.form) or 0)
-    if contact is None or contact.campaign_id != cid:
-        contact = Contact(campaign_id=cid, email="alex@example.com", first_name="Alex", last_name="Sample",
-                          company="Example Ltd")
+    enrollment = sample_enrollment(sess, cid, int_arg("enrollment_id", 0, request.form)
+                                   or int_arg("contact_id", 0, request.form))
     try:
-        send_test(sess, st, steps_of(sess, cid), c, contact, to, settings_now())
+        with sess.no_autoflush:
+            send_test(sess, st, steps_of(sess, cid), c, enrollment, to, settings_now())
         ok(f"Test email sent to {to} (tracking disabled).")
     except SendError as e:
         err(f"Test failed: {e}")
@@ -400,15 +407,15 @@ def step_action(cid, sid):
     elif action == "send_now":
         steps = steps_of(sess, cid)
         n = skipped = 0
-        for contact in sess.query(Contact).filter(Contact.campaign_id == cid, Contact.stage == st.position - 1):
-            if queue_next(sess, contact, steps):
+        for e in sess.query(Enrollment).filter(Enrollment.campaign_id == cid, Enrollment.stage == st.position - 1):
+            if queue_next(sess, e, steps):
                 n += 1
             else:
                 skipped += 1
         sess.commit()
         ok(f"{n} contact(s) queued for stage {st.position}." + (f" {skipped} skipped (paused, replied, unsubscribed or no content)." if skipped else ""))
     elif action == "cancel_queued":
-        ids = [i for (i,) in sess.query(Message.contact_id).filter(Message.step_id == sid, Message.queued == True)]  # noqa: E712
+        ids = [i for (i,) in sess.query(Message.enrollment_id).filter(Message.step_id == sid, Message.queued == True)]  # noqa: E712
         n = cancel_queued(sess, ids) if ids else 0
         sess.commit()
         ok(f"Cancelled {n} queued send(s).")

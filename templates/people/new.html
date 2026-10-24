@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_macros.html" import custom_field_inputs %}
+{% block title %}Add person{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('people.index') }}">People</a> / New</div>
+<div class="page-head"><div><h1>Add a person</h1></div></div>
+<form method="post" class="card card-pad" style="max-width:820px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="form-grid">
+    <label class="field"><span class="lbl">First name</span><input type="text" name="first_name" value="{{ form.get('first_name','') }}" autofocus></label>
+    <label class="field"><span class="lbl">Last name</span><input type="text" name="last_name" value="{{ form.get('last_name','') }}"></label>
+    <label class="field"><span class="lbl">Email</span><input type="email" name="email" value="{{ form.get('email','') }}"></label>
+    <label class="field"><span class="lbl">Phone / WhatsApp</span><input type="text" name="phone" value="{{ form.get('phone','') }}" placeholder="+353 87 123 4567"></label>
+    <label class="field"><span class="lbl">Company</span><input type="text" name="company" value="{{ form.get('company') or (company.name if company else '') }}"></label>
+    <label class="field"><span class="lbl">Company website</span><input type="text" name="company_website" value="{{ form.get('company_website') or (company.website if company and company.website else '') }}" placeholder="https://"></label>
+    <label class="field"><span class="lbl">Job title</span><input type="text" name="job_title" value="{{ form.get('job_title','') }}"></label>
+    <label class="field"><span class="lbl">Lifecycle stage</span><select name="lifecycle_stage">{% for k, label in lifecycle_stages %}<option value="{{ k }}" {{ 'selected' if (form.get('lifecycle_stage') or 'lead') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner_id"><option value="">Me</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if form.get('owner_id') == u.id|string }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Source</span><input type="text" name="source" value="{{ form.get('source','') }}" placeholder="referral, website, event…"></label>
+    <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ form.get('tags','') }}" placeholder="comma separated"></label>
+    <label class="field"><span class="lbl">Enroll in campaign</span><select name="campaign_id"><option value="">No</option>{% for cp in campaigns %}<option value="{{ cp.id }}">{{ cp.name }}</option>{% endfor %}</select></label>
+    {{ custom_field_inputs(fields, {}) }}
+  </div>
+  <div class="form-actions"><button class="btn btn-primary">Add person</button><a class="btn btn-ghost" href="{{ url_for('people.index') }}">Cancel</a></div>
+</form>
+{% endblock %}

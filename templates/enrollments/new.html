@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Enroll someone{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('enrollments.index') }}">Enrollments</a> / New</div>
+<div class="page-head"><div><h1>Enroll someone in a campaign</h1>
+  <div class="sub">If the email is new, a person record is created; if it exists, that person is enrolled. To enroll many people at once, select them on the <a href="{{ url_for('people.index') }}">People</a> page.</div></div></div>
+<form method="post" class="card card-pad" style="max-width:760px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="form-grid">
+    <label class="field"><span class="lbl">Campaign *</span>
+      <select name="campaign_id" required><option value="">Choose…</option>
+        {% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if (form.get('campaign_id') or default_campaign|string)|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Email *</span><input type="email" name="email" value="{{ form.get('email') or (person.email if person else '') }}" required></label>
+    <label class="field"><span class="lbl">First name</span><input type="text" name="first_name" value="{{ form.get('first_name') or (person.first_name if person else '') or '' }}"></label>
+    <label class="field"><span class="lbl">Last name</span><input type="text" name="last_name" value="{{ form.get('last_name') or (person.last_name if person else '') or '' }}"></label>
+    <label class="field"><span class="lbl">Company</span><input type="text" name="company" value="{{ form.get('company') or (person.company.name if person and person.company else '') }}"></label>
+    <label class="field"><span class="lbl">Job title</span><input type="text" name="job_title" value="{{ form.get('job_title') or (person.job_title if person else '') or '' }}"></label>
+    <label class="field"><span class="lbl">Phone</span><input type="text" name="phone" value="{{ form.get('phone') or (person.phone if person else '') or '' }}"></label>
+    <label class="field"><span class="lbl">Priority</span><input type="text" name="priority" value="{{ form.get('priority','') }}" placeholder="High / Medium / Low"><div class="hint">High-priority enrollments are emailed first.</div></label>
+    <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ form.get('tags','') }}" placeholder="comma separated"></label>
+    <label class="field full"><span class="lbl">Note</span><textarea name="notes" rows="2">{{ form.get('notes','') }}</textarea><div class="hint">Saved on the person's timeline.</div></label>
+    <label class="field full"><span class="lbl">Campaign merge fields</span><textarea name="custom" rows="3" placeholder="what_we_found: booking button broken on mobile&#10;offer: free audit">{{ form.get('custom','') }}</textarea><div class="hint">One <code>name: value</code> per line. Use as <code>{{ '{{offer}}' }}</code> in this campaign's emails.</div></label>
+  </div>
+  <div class="form-actions"><button class="btn btn-primary">Enroll</button><a class="btn btn-ghost" href="{{ url_for('enrollments.index') }}">Cancel</a></div>
+</form>
+{% endblock %}

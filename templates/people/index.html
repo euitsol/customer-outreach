@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager, avatar %}
+{% block title %}People{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head">
+  <div><h1>People</h1><div class="sub">Everyone in your CRM: leads, prospects and customers, with or without a campaign.</div></div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('people.export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export</a>
+    <a class="btn" href="{{ url_for('imports.upload') }}">{{ icon('upload') }} Import</a>
+    <a class="btn btn-primary" href="{{ url_for('people.new') }}">{{ icon('plus') }} Add person</a>
+  </div>
+</div>
+
+<div class="card" data-bulk-scope>
+  <form class="filters" method="get" action="{{ url_for('people.index') }}" data-autosubmit>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Name, email, phone, job title, company"></label>
+    <label class="field"><span class="lbl">Lifecycle</span>
+      <select name="lifecycle"><option value="">Any</option>{% for k, label in lifecycle_stages %}<option value="{{ k }}" {{ 'selected' if args.get('lifecycle') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Lead status</span>
+      <select name="lead_status"><option value="">Any</option>{% for k, label in lead_statuses %}<option value="{{ k }}" {{ 'selected' if args.get('lead_status') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    {% if users %}<label class="field"><span class="lbl">Owner</span>
+      <select name="owner"><option value="">Anyone</option><option value="none" {{ 'selected' if args.get('owner') == 'none' }}>Unassigned</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if args.get('owner') == u.id|string }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Tag</span>
+      <select name="tag"><option value="">Any tag</option><option value="__none__" {{ 'selected' if args.get('tag') == '__none__' }}>No tags</option>{% for t in all_tags %}<option value="{{ t }}" {{ 'selected' if args.get('tag') == t }}>{{ t }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Campaign</span>
+      <select name="campaign"><option value="">Any</option><option value="none" {{ 'selected' if args.get('campaign') == 'none' }}>Not in any campaign</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign') == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Has</span>
+      <select name="has"><option value="">-</option>{% for k, label in [('email','An email'),('no_email','No email'),('phone','A phone number')] %}<option value="{{ k }}" {{ 'selected' if args.get('has') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Engagement</span>
+      <select name="engaged"><option value="">Any</option><option value="replied" {{ 'selected' if args.get('engaged') == 'replied' }}>Replied to a campaign</option></select></label>
+    <label class="field"><span class="lbl">Sort</span>
+      <select name="sort">{% for k, label in [('recent','Newest'),('name','Name A-Z'),('email','Email A-Z'),('company','Company A-Z'),('activity','Recent activity'),('contacted','Recently contacted')] %}<option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Apply</button>
+    <a class="btn btn-ghost" href="{{ url_for('people.index') }}">Reset</a>
+  </form>
+
+  <div class="results-bar"><b>{{ page.total }}</b> {{ 'person' if page.total == 1 else 'people' }}</div>
+
+  <form id="bulk-form" method="post" action="{{ url_for('people.bulk') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path.rstrip('?') }}">
+    <input type="hidden" name="qs" value="{{ query_string }}">
+    <input type="hidden" name="select_all" id="select_all_field" value="0">
+    <div class="selectall-note hidden" id="selectall-note" data-more="{{ '1' if page.total > page.items|length else '' }}">
+      All {{ page.items|length }} on this page are selected. <a href="#" id="pick-all-matching" data-total="{{ page.total }}">Select all {{ page.total }} matching people</a>
+    </div>
+    {% if page.items %}
+    <div class="table-wrap"><table class="tbl">
+      <thead><tr><th class="check"><input type="checkbox" id="check-all" aria-label="Select all"></th>
+        <th>Person</th><th>Company</th><th>Lifecycle</th><th>Tags</th><th>Owner</th><th class="num">Campaigns</th><th>Last activity</th></tr></thead>
+      <tbody>
+      {% for p in page.items %}
+        <tr>
+          <td class="check"><input type="checkbox" class="row-check" name="ids" value="{{ p.id }}"></td>
+          <td><div class="who">{{ avatar(p.display_name, 'sm') }}<div><a class="primary" href="{{ url_for('people.detail', person_id=p.id) }}">{{ p.display_name }}</a>
+            <div class="sub">{{ p.email or p.phone or '' }}{% if p.job_title %} · {{ p.job_title }}{% endif %}</div></div></div></td>
+          <td>{% if p.company %}<a href="{{ url_for('companies.detail', company_id=p.company.id) }}">{{ p.company.name }}</a>{% else %}<span class="faint">-</span>{% endif %}</td>
+          <td>{{ pill(p.lifecycle_stage, p.lifecycle_stage|upper if p.lifecycle_stage in ('mql','sql') else None) }}{% if p.do_not_contact %} <span class="pill bad nodot">DNC</span>{% endif %}</td>
+          <td>{% for t in p.tags %}<a class="tag tag-link" href="{{ url_for('people.index', tag=t.name) }}">{{ t.name }}</a>{% endfor %}</td>
+          <td class="small">{{ p.owner.label if p.owner else '' }}</td>
+          <td class="num">{{ enrolled.get(p.id, 0) or '' }}</td>
+          <td class="nowrap muted small">{{ p.last_activity_at|ago if p.last_activity_at else '-' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {{ pager(page, args, url_for('people.index')) }}
+
+    <div class="bulkbar hidden" id="bulkbar">
+      <b><span id="sel-count">0</span> selected</b>
+      <select name="campaign_id" style="max-width:190px"><option value="">Enroll in campaign…</option>{% for cp in campaigns %}<option value="{{ cp.id }}">{{ cp.name }}</option>{% endfor %}</select>
+      <button class="btn btn-sm" name="action" value="enroll">Enroll</button>
+      <span class="sep"></span>
+      <input type="text" name="tags" id="bulk-tags" list="tag-list" placeholder="tag1, tag2" style="max-width:150px">
+      <datalist id="tag-list">{% for t in all_tags %}<option value="{{ t }}">{% endfor %}</datalist>
+      <button class="btn btn-sm" name="action" value="add_tags" data-needs="#bulk-tags">Add tag</button>
+      <button class="btn btn-sm" name="action" value="remove_tags" data-needs="#bulk-tags">Remove tag</button>
+      <span class="sep"></span>
+      <select name="lifecycle_stage" style="max-width:170px"><option value="">Lifecycle…</option>{% for k, label in lifecycle_stages %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+      <button class="btn btn-sm" name="action" value="lifecycle">Set</button>
+      {% if users %}<select name="owner_id" style="max-width:160px"><option value="">Owner…</option>{% for u in users %}<option value="{{ u.id }}">{{ u.label }}</option>{% endfor %}</select>
+      <button class="btn btn-sm" name="action" value="owner">Assign</button>{% endif %}
+      <span class="sep"></span>
+      <button class="btn btn-sm" name="action" value="merge" title="Select exactly two">{{ icon('merge') }} Merge</button>
+      <button class="btn btn-sm" name="action" value="export">Export</button>
+      <button class="btn btn-sm btn-danger" name="action" value="delete" data-confirm="Permanently delete the selected people with their campaign history, notes, tasks and conversations?">Delete</button>
+    </div>
+    {% else %}
+    <div class="empty">
+      <h3>No people found</h3>
+      <p>{{ 'Try removing some filters.' if args else 'Add someone, or import a spreadsheet of leads.' }}</p>
+      {% if not args %}<a class="btn btn-primary" href="{{ url_for('people.new') }}">Add a person</a>{% endif %}
+    </div>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

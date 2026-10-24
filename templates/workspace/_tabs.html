@@ -1,0 +1,10 @@
+{% set ep = request.endpoint or '' %}
+<div class="tabs">
+  <a href="{{ url_for('workspace.integrations') }}" class="{{ 'active' if ep == 'workspace.integrations' }}">Integrations</a>
+  <a href="{{ url_for('workspace.fields') }}" class="{{ 'active' if ep == 'workspace.fields' }}">Custom fields</a>
+  <a href="{{ url_for('workspace.pipelines') }}" class="{{ 'active' if ep == 'workspace.pipelines' }}">Pipelines</a>
+  <a href="{{ url_for('workspace.users') }}" class="{{ 'active' if ep == 'workspace.users' }}">Users</a>
+  <a href="{{ url_for('workspace.api_keys') }}" class="{{ 'active' if ep == 'workspace.api_keys' }}">API keys &amp; Claude</a>
+  <a href="{{ url_for('workspace.audit_log') }}" class="{{ 'active' if ep == 'workspace.audit_log' }}">Audit log</a>
+  <a href="{{ url_for('admin.settings') }}">Sending settings</a>
+</div>

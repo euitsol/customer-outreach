@@ -101,3 +101,34 @@ def form_ids(name="ids"):
 
 def form_bool(name):
     return request.form.get(name) in ("1", "on", "true", "yes")
+
+
+# ------------------------------------------------------------------ who is acting
+
+def current_user():
+    """The signed-in User row, or None (env-configured admin / open panel)."""
+    if "user" not in g:
+        from flask import session as flask_session
+        from app.models import User
+        uid = flask_session.get("uid")
+        g.user = db().get(User, uid) if uid else None
+    return g.user
+
+
+def actor():
+    from flask import session as flask_session
+    from app.crm.audit import Actor
+    u = current_user()
+    if u is not None:
+        return Actor("user", str(u.id), u.label, user_id=u.id)
+    return Actor("user", "admin", flask_session.get("login") or "admin")
+
+
+def form_date(name, source=None):
+    from datetime import datetime
+    source = source if source is not None else request.form
+    v = (source.get(name) or "").strip()
+    try:
+        return datetime.strptime(v, "%Y-%m-%d").date() if v else None
+    except ValueError:
+        return None

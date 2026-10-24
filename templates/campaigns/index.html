@@ -28,7 +28,7 @@
         <td><a class="primary" href="{{ url_for('campaigns.overview', cid=c.id) }}">{{ c.name }}</a>{% if c.description %}<div class="sub">{{ c.description|truncate(70) }}</div>{% endif %}</td>
         <td>{{ pill(c.status) }}</td>
         <td class="num">{{ m.get('steps', 0) }}</td>
-        <td class="num"><a href="{{ url_for('contacts.in_campaign', cid=c.id) }}">{{ total }}</a></td>
+        <td class="num"><a href="{{ url_for('enrollments.in_campaign', cid=c.id) }}">{{ total }}</a></td>
         <td style="min-width:140px">
           {% if total %}<div class="progress" title="{{ m.get('in_sequence',0) }} in sequence, {{ m.get('finished',0) }} finished, {{ m.get('replied',0) }} replied">
             <i class="p-sent" style="width:{{ ((m.get('in_sequence',0)+m.get('finished',0)) / total * 100)|round(1) }}%"></i>

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager, avatar %}
+{% block title %}Deals{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head">
+  <div><h1>Deals</h1>
+    {% if summary %}<div class="sub">{{ summary.open[0] }} open worth <b>{{ summary.open[1]|money(currency) }}</b> (weighted {{ summary.weighted|money(currency) }}) · won {{ summary.won[1]|money(currency) }} · lost {{ summary.lost[0] }}</div>{% endif %}</div>
+  <div class="page-actions">
+    {% if pipelines|length > 1 %}<form method="get" class="row"><input type="hidden" name="view" value="{{ view }}"><select name="pipeline" onchange="this.form.submit()">{% for p in pipelines %}<option value="{{ p.id }}" {{ 'selected' if pipeline and p.id == pipeline.id }}>{{ p.name }}</option>{% endfor %}</select></form>{% endif %}
+    <a class="btn {{ 'btn-primary' if view == 'board' }}" href="{{ url_for('deals.index', pipeline=pipeline.id if pipeline else None, view='board') }}">Board</a>
+    <a class="btn {{ 'btn-primary' if view == 'list' }}" href="{{ url_for('deals.index', pipeline=pipeline.id if pipeline else None, view='list') }}">List</a>
+    <a class="btn" href="{{ url_for('workspace.pipelines') }}">{{ icon('sliders') }}</a>
+    <a class="btn btn-primary" href="{{ url_for('deals.new', pipeline_id=pipeline.id if pipeline else None) }}">{{ icon('plus') }} New deal</a>
+  </div>
+</div>
+
+{% if not pipeline %}
+<div class="card empty"><h3>No pipeline</h3><p>Create one under <a href="{{ url_for('workspace.pipelines') }}">Fields &amp; pipelines</a>.</p></div>
+{% elif view == 'list' %}
+<div class="card">
+  <form class="filters" method="get" data-autosubmit>
+    <input type="hidden" name="view" value="list"><input type="hidden" name="pipeline" value="{{ pipeline.id }}">
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ filters.q }}" placeholder="Deal title"></label>
+    <label class="field"><span class="lbl">Status</span><select name="status"><option value="">Any</option>{% for k in ['open','won','lost'] %}<option value="{{ k }}" {{ 'selected' if args.get('status') == k }}>{{ k|capitalize }}</option>{% endfor %}</select></label>
+    {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner"><option value="">Anyone</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if filters.owner_id == u.id }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Sort</span><select name="sort">{% for k, label in [('updated','Recently updated'),('amount','Largest'),('close','Closing soonest'),('title','Title')] %}<option value="{{ k }}" {{ 'selected' if args.get('sort') == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Apply</button>
+  </form>
+  {% if page.items %}
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Deal</th><th>Stage</th><th class="num">Amount</th><th>Company</th><th>Contact</th><th>Close date</th><th>Owner</th></tr></thead>
+    <tbody>{% for d in page.items %}
+      <tr><td><a class="primary" href="{{ url_for('deals.detail', deal_id=d.id) }}">{{ d.title }}</a></td>
+        <td>{{ pill(d.status, d.stage.name) }}</td><td class="num money">{{ d.amount|money(d.currency) }}</td>
+        <td>{% if d.company %}<a href="{{ url_for('companies.detail', company_id=d.company.id) }}">{{ d.company.name }}</a>{% endif %}</td>
+        <td>{% if d.person %}<a href="{{ url_for('people.detail', person_id=d.person.id) }}">{{ d.person.display_name }}</a>{% endif %}</td>
+        <td class="small">{{ d.expected_close_date.strftime('%d %b %Y') if d.expected_close_date else '' }}</td>
+        <td class="small">{{ d.owner.label if d.owner else '' }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {{ pager(page, args, url_for('deals.index')) }}
+  {% else %}<div class="empty"><h3>No deals</h3><p>Nothing matches.</p></div>{% endif %}
+</div>
+{% else %}
+<form method="get" class="row mb2"><input type="hidden" name="pipeline" value="{{ pipeline.id }}">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Filter deals" style="max-width:260px">
+  {% if users %}<select name="owner" style="max-width:180px" onchange="this.form.submit()"><option value="">Anyone</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if filters.owner_id == u.id }}>{{ u.label }}</option>{% endfor %}</select>{% endif %}
+  <span class="small muted">Drag cards between columns to move them.</span>
+</form>
+<div class="board">
+  {% for st, deals, total in columns %}
+  <section class="lane {{ st.kind }}">
+    <div class="lane-head"><b>{{ st.name }}</b><span class="small">{{ deals|length }} · {{ total|money(currency) }}{% if st.kind == 'open' %} · {{ st.probability }}%{% endif %}</span></div>
+    <div class="lane-body" data-stage="{{ st.id }}" data-kind="{{ st.kind }}">
+      {% for d in deals %}
+      <article class="deal-card" draggable="true" data-move="{{ url_for('deals.move', deal_id=d.id) }}">
+        <a class="primary" href="{{ url_for('deals.detail', deal_id=d.id) }}">{{ d.title }}</a>
+        <div class="row" style="justify-content:space-between;margin-top:4px"><span class="amt">{{ d.amount|money(d.currency) if d.amount is not none else '' }}</span>{% if d.owner %}<span title="{{ d.owner.label }}">{{ avatar(d.owner.label, 'sm') }}</span>{% endif %}</div>
+        <div class="small">{{ d.company.name if d.company else (d.person.display_name if d.person else '') }}{% if d.expected_close_date %} · {{ d.expected_close_date.strftime('%d %b') }}{% endif %}</div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

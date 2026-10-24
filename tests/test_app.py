@@ -10,7 +10,7 @@ import pytest
 from app import mailer, worker
 from app.db import SessionLocal
 from app.mailer import SendError
-from app.models import Campaign, Contact, Event, Message, Suppression
+from app.models import Campaign, Enrollment, Event, Message, Person, Suppression
 from app.web import app
 
 
@@ -68,9 +68,13 @@ CSV = (
 
 
 def test_pages_render_empty(client):
-    for url in ["/", "/campaigns", "/contacts", "/outbox", "/activity", "/import", "/settings", "/tags",
-                "/suppression", "/templates", "/campaigns/new", "/contacts/new", "/healthz"]:
+    for url in ["/", "/campaigns", "/enrollments", "/outbox", "/activity", "/import", "/settings", "/tags",
+                "/suppression", "/templates", "/campaigns/new", "/enrollments/new", "/healthz", "/people",
+                "/people/new", "/companies", "/companies/new", "/deals", "/deals?view=list", "/deals/new", "/tasks",
+                "/tasks?view=done", "/inbox", "/settings/users", "/settings/api-keys", "/settings/integrations",
+                "/settings/fields", "/settings/pipelines", "/settings/audit"]:
         assert client.get(url).status_code == 200, url
+    assert client.get("/contacts").status_code == 302         # old URL redirects
 
 
 def test_full_flow(client, outbox):
@@ -104,18 +108,19 @@ def test_full_flow(client, outbox):
     for name, body in sels:
         data[name] = re.search(r'<option value="([^"]+)" selected', body).group(1)
     assert "email" in data.values() and "step1_body" in data.values() and "step2_date" in data.values()
-    assert data["map_7"] == "custom"       # Website becomes a merge field
+    assert data["map_7"] == "company_website"   # Website goes to the company record
     r = client.post(f"/import/{token}", data=data)
     assert r.status_code == 302, r.get_data(as_text=True)[:500]
 
     s.expire_all()
-    contacts = {c.email: c for c in s.query(Contact).filter_by(campaign_id=cid)}
+    contacts = {c.email: c for c in s.query(Enrollment).filter_by(campaign_id=cid)}
     assert set(contacts) == {"jane@acme.ie", "bob@beta.ie"}        # invalid + do-not-send rows dropped
     jane = contacts["jane@acme.ie"]
-    assert jane.custom_fields == {"website": "https://acme.ie"}
-    m1 = s.query(Message).filter_by(contact_id=jane.id, position=1).one()
+    assert jane.person.first_name == "Jane" and jane.person.company.name == "Acme"
+    assert jane.person.company.website == "https://acme.ie" and jane.person.company.domain == "acme.ie"
+    m1 = s.query(Message).filter_by(enrollment_id=jane.id, position=1).one()
     assert m1.subject == "Hello Jane" and "acme.ie/x" in m1.body
-    m2 = s.query(Message).filter_by(contact_id=jane.id, position=2).one()
+    m2 = s.query(Message).filter_by(enrollment_id=jane.id, position=2).one()
     assert m2.due_at.date().isoformat() in ("2099-01-01", "2098-12-31")                          # personalised send date
 
     # --- start the campaign; the worker sends stage 1 to both, with merge fields applied
@@ -135,10 +140,10 @@ def test_full_flow(client, outbox):
     assert "Hi Bob," in bob_plain and "Generic text for Beta" in bob_plain
 
     s.expire_all()
-    bob = s.query(Contact).filter_by(email="bob@beta.ie").one()
+    bob = s.query(Enrollment).filter_by(email="bob@beta.ie").one()
     assert bob.stage == 1 and bob.message_id
     assert bob.next_due_at is not None and bob.next_due_at > utcnow() + timedelta(hours=50)  # 2d3h wait
-    assert s.get(Contact, jane.id).next_due_at == m2.due_at
+    assert s.get(Enrollment, jane.id).next_due_at == m2.due_at
 
     # --- nothing more is due; running again sends nothing
     worker.run_cycle(s)
@@ -147,12 +152,12 @@ def test_full_flow(client, outbox):
     # --- "send now" on stage 2 for Bob, with SMTP failing first, then retried from the panel
     outbox.state["fail"] = SendError("451 try later", "message")
     step2 = steps[1]
-    post(client, f"/contacts/{bob.id}/stage/{step2.id}/action", action="send_now")
+    post(client, f"/enrollments/{bob.id}/stage/{step2.id}/action", action="send_now")
     worker.run_cycle(s)
     s.expire_all()
-    mb = s.query(Message).filter_by(contact_id=bob.id, position=2).one()
+    mb = s.query(Message).filter_by(enrollment_id=bob.id, position=2).one()
     assert mb.status == "failed" and mb.attempts == 1 and "451" in mb.last_error
-    assert s.get(Contact, bob.id).stage == 1                           # stage did not advance
+    assert s.get(Enrollment, bob.id).stage == 1                        # stage did not advance
     outbox.state["fail"] = None
     worker.run_cycle(s)                                                # backoff not elapsed: auto-retry waits
     assert len(outbox) == 2
@@ -161,47 +166,57 @@ def test_full_flow(client, outbox):
     s.expire_all()
     assert len(outbox) == 3
     assert outbox[-1][0] == "bob@beta.ie" and subj(outbox[-1][1]) == "Re: Quick idea for Beta"
-    assert outbox[-1][1]["In-Reply-To"] == s.get(Contact, bob.id).message_id
-    assert s.get(Contact, bob.id).stage == 2
+    assert outbox[-1][1]["In-Reply-To"] == s.get(Enrollment, bob.id).message_id
+    assert s.get(Enrollment, bob.id).stage == 2
 
-    # --- permanent refusal marks the contact bounced and suppresses the address
-    s.get(Contact, jane.id).next_due_at = None
+    # --- every campaign email is threaded into the person's inbox conversation
+    from app.models import Conversation, ConversationMessage
+    conv = s.query(Conversation).filter_by(person_id=s.get(Enrollment, bob.id).person_id, channel="email").one()
+    assert s.query(ConversationMessage).filter_by(conversation_id=conv.id, direction="out").count() == 2
+
+    # --- permanent refusal marks the enrollment bounced and suppresses the address
+    s.get(Enrollment, jane.id).next_due_at = None
     s.commit()
     outbox.state["fail"] = SendError("550 no such user", "recipient")
     worker.run_cycle(s)
     s.expire_all()
-    assert s.get(Contact, jane.id).bounced is True
+    assert s.get(Enrollment, jane.id).bounced is True
     assert s.query(Suppression).filter_by(value="jane@acme.ie").count() == 1
     outbox.state["fail"] = None
 
     # --- every page renders with data in it
-    for url in ["/", f"/campaigns/{cid}", f"/campaigns/{cid}/sequence", f"/campaigns/{cid}/contacts",
-                f"/campaigns/{cid}/outbox?view=failed", f"/campaigns/{cid}/edit", "/contacts?status=due&sort=due",
-                f"/contacts/{bob.id}", f"/contacts/{jane.id}", "/outbox?view=queued", "/outbox?view=failed",
-                "/activity?type=sent", "/activity/export", "/contacts/export", "/suppression",
-                f"/campaigns/{cid}/steps/{steps[0].id}/preview?contact_id={bob.id}",
-                f"/messages/{mb.id}", "/import/template.csv"]:
+    bob_person = s.get(Enrollment, bob.id).person_id
+    for url in ["/", f"/campaigns/{cid}", f"/campaigns/{cid}/sequence", f"/campaigns/{cid}/enrollments",
+                f"/campaigns/{cid}/outbox?view=failed", f"/campaigns/{cid}/edit", "/enrollments?status=due&sort=due",
+                f"/enrollments/{bob.id}", f"/enrollments/{jane.id}", "/outbox?view=queued", "/outbox?view=failed",
+                "/activity?type=sent", "/activity/export", "/enrollments/export", "/suppression",
+                f"/campaigns/{cid}/steps/{steps[0].id}/preview?enrollment_id={bob.id}",
+                f"/messages/{mb.id}", "/import/template.csv", f"/people/{bob_person}", "/people?q=beta",
+                "/people/export.csv", f"/people/{bob_person}/merge", "/companies?q=acme", "/inbox",
+                f"/inbox?c={conv.id}", "/people/lookup.json?q=bo", "/companies/lookup.json?q=ac"]:
         r = client.get(url)
         assert r.status_code == 200, (url, r.status_code)
-    pv = client.get(f"/campaigns/{cid}/steps/{steps[0].id}/preview?contact_id={bob.id}").get_json()
+    pv = client.get(f"/campaigns/{cid}/steps/{steps[0].id}/preview?enrollment_id={bob.id}").get_json()
     assert pv["subject"] == "Quick idea for Beta"
+    sample = client.get(f"/campaigns/{cid}/steps/{steps[0].id}/preview").get_json()
+    assert sample["subject"] == "Quick idea for Example Ltd"
 
 
 def test_tracking_and_unsubscribe(client):
     s = SessionLocal()
-    bob = s.query(Contact).filter_by(email="bob@beta.ie").one()
-    msg = s.query(Message).filter_by(contact_id=bob.id, position=1).one()
+    bob = s.query(Enrollment).filter_by(email="bob@beta.ie").one()
+    msg = s.query(Message).filter_by(enrollment_id=bob.id, position=1).one()
     msg.sent_at = utcnow() - timedelta(minutes=5)
     s.commit()
     # public endpoints need no login
     anon = app.test_client()
     r = anon.get(f"/t/o/{msg.open_token}.gif")
     assert r.status_code == 200 and r.mimetype == "image/gif"
-    assert s.query(Event).filter_by(contact_id=bob.id, type="opened").count() == 1
+    assert s.query(Event).filter_by(enrollment_id=bob.id, type="opened").count() == 1
     assert anon.get("/t/o/nope.gif").status_code == 200       # unknown token: still a pixel, no error
 
     from app.models import ClickLink
-    link = s.query(ClickLink).filter_by(contact_id=bob.id).first()
+    link = s.query(ClickLink).filter_by(enrollment_id=bob.id).first()
     if link:
         r = anon.get(f"/t/c/{link.token}")
         assert r.status_code == 302 and r.headers["Location"] == link.target_url
@@ -209,17 +224,20 @@ def test_tracking_and_unsubscribe(client):
     # GET only asks for confirmation; POST unsubscribes (also what mail clients send for one-click)
     assert anon.get(f"/t/u/{msg.unsub_token}").status_code == 200
     s.expire_all()
-    assert s.get(Contact, bob.id).unsubscribed is False
+    assert s.get(Enrollment, bob.id).unsubscribed is False
     assert anon.post(f"/t/u/{msg.unsub_token}", data={"List-Unsubscribe": "One-Click"}).status_code == 200
     s.expire_all()
-    assert s.get(Contact, bob.id).unsubscribed is True
+    assert s.get(Enrollment, bob.id).unsubscribed is True
     assert s.query(Suppression).filter_by(value="bob@beta.ie").count() == 1
+    from app.crm import people as people_svc
+    assert people_svc.consent_status(s, s.get(Enrollment, bob.id).person, "email") == "revoked"
 
 
 def test_csrf_and_auth(client):
     anon = app.test_client()
-    assert anon.get("/contacts").status_code == 302
-    assert anon.post("/contacts/bulk", data={"action": "delete"}).status_code == 401
+    assert anon.get("/people").status_code == 302
+    assert anon.post("/enrollments/bulk", data={"action": "delete"}).status_code == 401
+    assert anon.post("/people/bulk", data={"action": "delete"}).status_code == 401
     assert client.post("/campaigns/new", data={"name": "x"}).status_code == 400   # missing csrf token
 
 
@@ -229,25 +247,37 @@ def test_reply_and_bounce_detection():
     camp = Campaign(name="Replies", status="active")
     s.add(camp)
     s.flush()
-    c = Contact(campaign_id=camp.id, email="reply@x.ie", stage=1, send_flag=True)
-    d = Contact(campaign_id=camp.id, email="gone@y.ie", stage=1, send_flag=True)
-    s.add_all([c, d])
+    from app.crm import people as people_svc
+    from app.services import enroll
+    c, _ = enroll(s, camp, people_svc.upsert(s, email="reply@x.ie", first_name="Rae")[0])
+    d, _ = enroll(s, camp, people_svc.upsert(s, email="gone@y.ie")[0])
+    c.stage = d.stage = 1
     s.commit()
     own = {"sender@example.com"}
 
     auto = message_from_string("From: reply@x.ie\nSubject: Automatic reply: hi\nAuto-Submitted: auto-replied\n\nout")
     assert reply_checker.handle_message(s, auto, own) is None
     s.expire_all()
-    assert s.get(Contact, c.id).replied is False
+    assert s.get(Enrollment, c.id).replied is False
 
-    real = message_from_string("From: Reply <reply@x.ie>\nSubject: Re: hi\n\nSounds good")
+    real = message_from_string("From: Reply <reply@x.ie>\nSubject: Re: hi\nMessage-ID: <r1@x.ie>\n\n"
+                               "Sounds good\n\nOn Mon, 1 Jan 2026 Tester wrote:\n> original text")
     assert reply_checker.handle_message(s, real, own) == "reply"
     s.commit()
-    assert s.get(Contact, c.id).replied is True
+    assert s.get(Enrollment, c.id).replied is True
+    from app.models import Conversation, ConversationMessage
+    conv = s.query(Conversation).filter_by(person_id=s.get(Enrollment, c.id).person_id).one()
+    inbound = s.query(ConversationMessage).filter_by(conversation_id=conv.id, direction="in").one()
+    assert inbound.body == "Sounds good" and conv.unread_count == 1       # quoted history stripped
+    assert reply_checker.handle_message(s, real, own) == "logged"         # same Message-ID again: no duplicate
+    s.commit()
+    assert s.query(ConversationMessage).filter_by(conversation_id=conv.id, direction="in").count() == 1
 
     bounce = message_from_string(
         "From: MAILER-DAEMON@mx.example.com\nSubject: Delivery Status Notification (Failure)\n"
         "X-Failed-Recipients: gone@y.ie\n\nThe address was not found. 550 5.1.1")
     assert reply_checker.handle_message(s, bounce, own) == "bounce"
     s.commit()
-    assert s.get(Contact, d.id).bounced is True
+    assert s.get(Enrollment, d.id).bounced is True
+    from app.models import ContactPoint
+    assert s.query(ContactPoint).filter_by(kind="email", value="gone@y.ie").one().status == "bounced"

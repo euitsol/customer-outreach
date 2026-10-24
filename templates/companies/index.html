@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager, avatar %}
+{% block title %}Companies{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head">
+  <div><h1>Companies</h1><div class="sub">Accounts, with their people and deals.</div></div>
+  <div class="page-actions"><a class="btn btn-primary" href="{{ url_for('companies.new') }}">{{ icon('plus') }} Add company</a></div>
+</div>
+<div class="card">
+  <form class="filters" method="get" data-autosubmit>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Name, domain, city, industry"></label>
+    {% if industries %}<label class="field"><span class="lbl">Industry</span><select name="industry"><option value="">Any</option>{% for i in industries %}<option value="{{ i }}" {{ 'selected' if args.get('industry') == i }}>{{ i }}</option>{% endfor %}</select></label>{% endif %}
+    {% if all_tags %}<label class="field"><span class="lbl">Tag</span><select name="tag"><option value="">Any</option>{% for t in all_tags %}<option value="{{ t }}" {{ 'selected' if args.get('tag') == t }}>{{ t }}</option>{% endfor %}</select></label>{% endif %}
+    {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner"><option value="">Anyone</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if args.get('owner') == u.id|string }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Sort</span><select name="sort">{% for k, label in [('name','Name'),('recent','Newest'),('people','Most people')] %}<option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Apply</button><a class="btn btn-ghost" href="{{ url_for('companies.index') }}">Reset</a>
+  </form>
+  <div class="results-bar"><b>{{ page.total }}</b> compan{{ 'y' if page.total == 1 else 'ies' }}</div>
+  {% if page.items %}
+  <div class="table-wrap"><table class="tbl">
+    <thead><tr><th>Company</th><th>Industry</th><th>Location</th><th>Tags</th><th class="num">People</th><th class="num">Open deals</th><th>Owner</th></tr></thead>
+    <tbody>
+    {% for c, n in page.items %}{% set od = open_deals.get(c.id) %}
+      <tr>
+        <td><div class="who">{{ avatar(c.name, 'sm') }}<div><a class="primary" href="{{ url_for('companies.detail', company_id=c.id) }}">{{ c.name }}</a>
+          <div class="sub">{% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener" class="faint">{{ c.domain or c.website }}</a>{% else %}{{ c.domain or '' }}{% endif %}</div></div></div></td>
+        <td class="small">{{ c.industry or '' }}</td>
+        <td class="small">{{ [c.city, c.country]|select|join(', ') }}</td>
+        <td>{% for t in c.tags %}<span class="tag">{{ t.name }}</span>{% endfor %}</td>
+        <td class="num"><a href="{{ url_for('people.index', company=c.id) }}">{{ n }}</a></td>
+        <td class="num">{% if od %}{{ od[0] }} · {{ od[1]|money }}{% endif %}</td>
+        <td class="small">{{ c.owner.label if c.owner else '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {{ pager(page, args, url_for('companies.index')) }}
+  {% else %}
+  <div class="empty"><h3>No companies</h3><p>Companies are created automatically when you import people with a company column, or add one here.</p><a class="btn btn-primary" href="{{ url_for('companies.new') }}">Add a company</a></div>
+  {% endif %}
+</div>
+{% endblock %}

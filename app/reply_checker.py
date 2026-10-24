@@ -1,17 +1,21 @@
 """Watches the IMAP inbox for replies (stops the sequence) and bounces (marks bad addresses)."""
 import email
+import html as html_lib
 import imaplib
 import re
 import time
 import traceback
-from datetime import datetime, timedelta
-from app.clock import utcnow
+from datetime import timedelta, timezone
 from email.header import decode_header, make_header
-from email.utils import getaddresses, parseaddr
+from email.utils import getaddresses, parseaddr, parsedate_to_datetime
+
+from sqlalchemy import func
 
 from app import config, settings as app_settings
+from app.clock import utcnow
+from app.crm import conversations, people as people_svc
 from app.db import SessionLocal, init_db
-from app.models import Contact, Event, Message
+from app.models import ContactPoint, Enrollment, Event, Message
 from app.services import add_suppression
 
 EMAIL_FIND = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
@@ -81,6 +85,45 @@ def _message_ids(msg):
     return set(re.findall(r"<[^>]+>", refs))
 
 
+QUOTE_START = re.compile(r"^(On .+ wrote:|-----Original Message-----|From: .+|Le .+ a écrit :|Am .+ schrieb .+:)\s*$",
+                         re.M)
+
+
+def body_text(msg, limit=20000):
+    """Readable text of an email: the text/plain part, else de-tagged HTML; quoted history cut off."""
+    plain = html_part = None
+    for part in msg.walk() if msg.is_multipart() else [msg]:
+        if part.get_content_maintype() == "multipart" or part.get("Content-Disposition", "").startswith("attachment"):
+            continue
+        ctype = part.get_content_type()
+        payload = part.get_payload(decode=True)
+        if payload is None:
+            continue
+        text = payload.decode(part.get_content_charset() or "utf-8", "replace")
+        if ctype == "text/plain" and plain is None:
+            plain = text
+        elif ctype == "text/html" and html_part is None:
+            html_part = text
+    if plain is None and html_part:
+        stripped = re.sub(r"(?is)<(script|style).*?</\1>", "", html_part)
+        stripped = re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", stripped)
+        plain = html_lib.unescape(re.sub(r"<[^>]+>", "", stripped))
+    plain = (plain or "").replace("\r\n", "\n")
+    m = QUOTE_START.search(plain)
+    if m and m.start() > 0:
+        plain = plain[:m.start()]
+    lines = [ln for ln in plain.split("\n") if not ln.startswith(">")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:limit]
+
+
+def _msg_date(msg):
+    try:
+        d = parsedate_to_datetime(msg.get("Date"))
+        return d.astimezone(timezone.utc).replace(tzinfo=None) if d.tzinfo else d
+    except (TypeError, ValueError, IndexError):
+        return utcnow()
+
+
 def handle_message(session, msg, own_addrs):
     sender = parseaddr(msg.get("From", ""))[1].lower()
     if sender in own_addrs:
@@ -91,9 +134,14 @@ def handle_message(session, msg, own_addrs):
             if addr in own_addrs:
                 continue
             hit = False
-            for c in session.query(Contact).filter(Contact.email.ilike(addr), Contact.bounced == False):  # noqa: E712
-                c.bounced = True
-                session.add(Event(contact_id=c.id, stage=c.stage, type="bounced", detail=_decode(msg.get("Subject"))[:300]))
+            for e in session.query(Enrollment).filter(func.lower(Enrollment.email) == addr,
+                                                      Enrollment.bounced == False):  # noqa: E712
+                e.bounced = True
+                session.add(Event(enrollment_id=e.id, stage=e.stage, type="bounced",
+                                  detail=_decode(msg.get("Subject"))[:300]))
+                hit = True
+            for cp in session.query(ContactPoint).filter(ContactPoint.kind == "email", ContactPoint.value == addr):
+                cp.status = "bounced"
                 hit = True
             if hit:
                 add_suppression(session, addr, "Hard bounce")
@@ -103,20 +151,31 @@ def handle_message(session, msg, own_addrs):
     if is_auto_reply(msg):
         return None
 
-    contacts = []
+    subject = _decode(msg.get("Subject"))
+    enrollments = []
     ids = _message_ids(msg)
     if ids:
-        contacts = [m.contact for m in session.query(Message).filter(Message.message_id.in_(ids))]
-    if not contacts and sender:
-        contacts = session.query(Contact).filter(Contact.email.ilike(sender), Contact.stage >= 1).all()
+        enrollments = [m.enrollment for m in session.query(Message).filter(Message.message_id.in_(ids))]
+    if not enrollments and sender:
+        enrollments = session.query(Enrollment).filter(func.lower(Enrollment.email) == sender,
+                                                       Enrollment.stage >= 1).all()
     marked = 0
-    for c in contacts:
-        if not c.replied:
-            c.replied = True
-            session.add(Event(contact_id=c.id, stage=c.stage, type="replied", detail=_decode(msg.get("Subject"))[:300]))
+    for e in enrollments:
+        if not e.replied:
+            e.replied = True
+            session.add(Event(enrollment_id=e.id, stage=e.stage, type="replied", detail=subject[:300]))
             marked += 1
-            print(f"reply  <- {c.email}: sequence stopped", flush=True)
-    return "reply" if marked else None
+            print(f"reply  <- {e.email}: sequence stopped", flush=True)
+
+    # Log the email in the shared inbox when it comes from someone we know.
+    person = enrollments[0].person if enrollments else people_svc.find_by_email(session, sender)
+    logged = False
+    if person is not None:
+        conversations.record_email_inbound(
+            session, person, subject=subject, body=body_text(msg), message_id=(msg.get("Message-ID") or "").strip() or None,
+            in_reply_to=(msg.get("In-Reply-To") or "").strip() or None, when=_msg_date(msg), sender=sender)
+        logged = True
+    return "reply" if marked else ("logged" if logged else None)
 
 
 def check_replies(session):

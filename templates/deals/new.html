@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import custom_field_inputs %}
+{% block title %}New deal{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('deals.index') }}">Deals</a> / New</div>
+<div class="page-head"><div><h1>New deal</h1>{% if person %}<div class="sub">with <a href="{{ url_for('people.detail', person_id=person.id) }}">{{ person.display_name }}</a>{% if person.company %} at {{ person.company.name }}{% endif %}</div>{% elif company %}<div class="sub">with {{ company.name }}</div>{% endif %}</div></div>
+<form method="post" class="card card-pad" style="max-width:820px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if person %}<input type="hidden" name="person_id" value="{{ person.id }}">{% endif %}
+  {% if company %}<input type="hidden" name="company_id" value="{{ company.id }}">{% endif %}
+  <div class="form-grid">
+    <label class="field full"><span class="lbl">Title *</span><input type="text" name="title" value="{{ form.get('title') or ((person.company.name if person and person.company else (company.name if company else (person.display_name if person else ''))) ~ (' - ' if person or company else '')) }}" required autofocus></label>
+    {% if pipelines|length > 1 %}<label class="field"><span class="lbl">Pipeline</span><select name="pipeline_id">{% for p in pipelines %}<option value="{{ p.id }}" {{ 'selected' if pipeline and p.id == pipeline.id }}>{{ p.name }}</option>{% endfor %}</select></label>{% endif %}
+    {% if pipeline %}<label class="field"><span class="lbl">Stage</span><select name="stage_id">{% for s in pipeline.stages if s.kind == 'open' %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Amount</span><input type="text" name="amount" value="{{ form.get('amount','') }}" inputmode="decimal" placeholder="5000"></label>
+    <label class="field"><span class="lbl">Currency</span><input type="text" name="currency" value="{{ form.get('currency') or currency }}" maxlength="3"></label>
+    <label class="field"><span class="lbl">Expected close</span><input type="date" name="expected_close_date" value="{{ form.get('expected_close_date','') }}"></label>
+    {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner_id"><option value="">Me</option>{% for u in users %}<option value="{{ u.id }}">{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Source</span><input type="text" name="source" value="{{ form.get('source','') }}" placeholder="cold email, referral…"></label>
+    {{ custom_field_inputs(fields, {}) }}
+  </div>
+  <div class="form-actions"><button class="btn btn-primary">Create deal</button><a class="btn btn-ghost" href="{{ url_for('deals.index') }}">Cancel</a></div>
+</form>
+{% endblock %}

@@ -1,20 +1,21 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, pill %}
-{% block title %}Email templates{% endblock %}
+{% block title %}Templates{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Email templates</h1>
-  <div class="sub">Reusable email texts. In a campaign's sequence use "Load template…" to drop one into a stage.</div></div>
+<div class="page-head"><div><h1>Templates</h1>
+  <div class="sub">Reusable message texts. Email templates load into campaign stages and inbox replies; WhatsApp templates point to a template approved in your Meta Business account (required to start a WhatsApp conversation).</div></div>
   <div class="page-actions"><a class="btn btn-primary" href="{{ url_for('admin.templates', edit=0) }}#editor">{{ icon('plus') }} New template</a></div></div>
 <div class="grid g-side" style="align-items:start">
   <div class="stack">
     {% for t in rows %}
     <div class="card card-pad">
-      <div class="row" style="justify-content:space-between"><h3>{{ t.name }}</h3>
+      <div class="row" style="justify-content:space-between"><h3>{{ t.name }} <span class="pill {{ t.channel }} nodot">{{ t.channel }}</span></h3>
         <div class="row">
           <a class="btn btn-sm" href="{{ url_for('admin.templates', edit=t.id) }}#editor">Edit</a>
           <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ t.id }}"><button class="btn btn-sm btn-danger" data-confirm="Delete template '{{ t.name }}'?">{{ icon('trash') }}</button></form>
         </div></div>
       {% if t.subject %}<div class="small mt1"><b>Subject:</b> {{ t.subject }}</div>{% endif %}
+      {% if t.channel == 'whatsapp' and t.meta %}<div class="small mt1"><b>Meta template:</b> <code>{{ t.meta.get('wa_template') }}</code> ({{ t.meta.get('language') }})</div>{% endif %}
       <div class="preview mt1" style="max-height:140px;overflow:hidden">{{ (t.body or '')|truncate(400) }}</div>
     </div>
     {% else %}
@@ -28,6 +29,10 @@
     <h2 class="mb2">{{ 'Edit template' if editing else 'New template' }}</h2>
     <div class="stack">
       <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ editing.name if editing else '' }}" required></label>
+      <label class="field"><span class="lbl">Channel</span><select name="channel">
+        {% for k, label in [('email','Email'),('whatsapp','WhatsApp')] %}<option value="{{ k }}" {{ 'selected' if editing and editing.channel == k }}>{{ label }}</option>{% endfor %}</select></label>
+      <div class="row"><label class="field grow"><span class="lbl">WhatsApp template name <span class="faint">(WhatsApp only)</span></span><input type="text" name="wa_template" value="{{ editing.meta.get('wa_template','') if editing and editing.meta else '' }}" placeholder="e.g. follow_up_v1"></label>
+        <label class="field" style="width:120px"><span class="lbl">Language</span><input type="text" name="wa_language" value="{{ editing.meta.get('language','en_US') if editing and editing.meta else 'en_US' }}"></label></div>
       <label class="field"><span class="lbl">Subject</span><input type="text" name="subject" value="{{ editing.subject if editing and editing.subject else '' }}"></label>
       <label class="field"><span class="lbl">Body</span><textarea name="body" rows="12" class="body-edit">{{ editing.body if editing and editing.body else '' }}</textarea>
         <div class="hint">Merge fields: <code>{{ '{{first_name|there}}' }}</code>, <code>{{ '{{company}}' }}</code>, any imported column.</div></label>

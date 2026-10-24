@@ -11,6 +11,7 @@ from email.utils import formataddr, formatdate, make_msgid
 from app import config
 from app.models import ClickLink
 
+DEFAULT_FOOTER = "Don't want further emails from us?"
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 TRAILING = ".,;:!?)]}"
 
@@ -34,13 +35,31 @@ def _split_url(raw):
     return url, tail
 
 
-def _link_token(session, contact_id, stage, url):
+def _link_token(session, enrollment_id, stage, url):
     token = secrets.token_urlsafe(16)
-    session.add(ClickLink(token=token, contact_id=contact_id, stage=stage, target_url=url))
+    session.add(ClickLink(token=token, enrollment_id=enrollment_id, stage=stage, target_url=url))
     return f"{config.TRACK_BASE_URL}/t/c/{token}"
 
 
-def prepare_bodies(session, body_text, contact_id, stage, open_token, unsub_token, opts):
+def simple_bodies(body_text, signature=""):
+    """(plain, html) for a one-to-one email: no tracking, no unsubscribe footer."""
+    text_body = (body_text or "").rstrip()
+    sig = (signature or "").strip()
+    if sig:
+        text_body += ("\n" if text_body.endswith(",") else "\n\n") + sig
+    parts, last = [], 0
+    for m in URL_RE.finditer(text_body):
+        url, tail = _split_url(m.group(0))
+        parts.append(html.escape(text_body[last:m.start()]) + f'<a href="{html.escape(url)}">{html.escape(url)}</a>'
+                     + html.escape(tail))
+        last = m.end()
+    parts.append(html.escape(text_body[last:]))
+    body_html = "".join(parts).replace("\r\n", "\n").replace("\n", "<br>\n")
+    return text_body, ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;'
+                       f'color:#222">{body_html}</div>')
+
+
+def prepare_bodies(session, body_text, enrollment_id, stage, open_token, unsub_token, opts):
     """Return (plain, html) versions of the email, with tracking applied per opts."""
     track_clicks = opts.get("track_clicks", True)
     sig = (opts.get("signature") or "").strip()
@@ -52,7 +71,7 @@ def prepare_bodies(session, body_text, contact_id, stage, open_token, unsub_toke
     plain_parts, html_parts, last = [], [], 0
     for m in URL_RE.finditer(text_body):
         url, tail = _split_url(m.group(0))
-        shown = _link_token(session, contact_id, stage, url) if track_clicks else url
+        shown = _link_token(session, enrollment_id, stage, url) if track_clicks else url
         plain_parts.append(text_body[last:m.start()] + shown + tail)
         html_parts.append(html.escape(text_body[last:m.start()]) +
                           f'<a href="{html.escape(shown)}">{html.escape(url)}</a>' + html.escape(tail))
@@ -65,14 +84,14 @@ def prepare_bodies(session, body_text, contact_id, stage, open_token, unsub_toke
     unsub_url = f"{config.TRACK_BASE_URL}/t/u/{unsub_token}"
     footer_html = footer_plain = ""
     if opts.get("footer_enabled", True):
-        label = html.escape(opts.get("footer_text") or "Don't want further emails from us?")
+        label = html.escape(opts.get("footer_text") or DEFAULT_FOOTER)
         addr = (opts.get("footer_address") or "").strip()
         footer_html = (
             '<p style="font-size:11px;color:#888;margin-top:24px;line-height:1.5">'
             f'{label} <a href="{unsub_url}" style="color:#888">Unsubscribe here</a>.'
             + (f"<br>{html.escape(addr)}" if addr else "") + "</p>"
         )
-        footer_plain = f"\n\n--\n{opts.get('footer_text') or chr(68)+'on' + chr(39) + 't want further emails from us?'} Unsubscribe: {unsub_url}"
+        footer_plain = f"\n\n--\n{opts.get('footer_text') or DEFAULT_FOOTER} Unsubscribe: {unsub_url}"
         if addr:
             footer_plain += f"\n{addr}"
     pixel = ""

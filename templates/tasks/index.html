@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, pager, csrf_field %}
+{% block title %}Tasks{% endblock %}
+{% block content %}
+{% set here = request.full_path.rstrip('?') %}
+<div class="page-head">
+  <div><h1>Tasks</h1><div class="sub">Follow-ups for people, companies and deals.</div></div>
+  <div class="page-actions">
+    {% if current_user() %}<a class="btn {{ 'btn-primary' if who == 'me' }}" href="{{ url_for('tasks.index', view=view, who='me') }}">Mine</a>
+    <a class="btn {{ 'btn-primary' if who == 'all' }}" href="{{ url_for('tasks.index', view=view, who='all') }}">Everyone's</a>{% endif %}
+  </div>
+</div>
+<div class="tabs">
+  {% for k, label in views %}<a href="{{ url_for('tasks.index', view=k, who=who) }}" class="{{ 'active' if view == k }}">{{ label }} <span class="count {{ 'bad' if k == 'overdue' and counts[k] }}">{{ counts[k] }}</span></a>{% endfor %}
+</div>
+<div class="grid g-side" style="align-items:start">
+  <div class="card">
+    {% if page.items %}
+    <table class="tbl">
+      <thead><tr><th style="width:34px"></th><th>Task</th><th>Related to</th><th>Due</th><th>Assignee</th></tr></thead>
+      <tbody>
+      {% for t in page.items %}
+        <tr>
+          <td><form method="post" action="{{ url_for('tasks.status', task_id=t.id) }}">{{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}"><input type="hidden" name="status" value="{{ 'open' if t.status == 'done' else 'done' }}"><button class="tick {{ 'done' if t.status == 'done' }}" title="{{ 'Re-open' if t.status == 'done' else 'Mark done' }}">&#10003;</button></form></td>
+          <td><b class="{{ 'struck' if t.status == 'done' }}">{{ t.title }}</b>{% if t.priority == 'high' %} <span class="pill bad nodot">high</span>{% elif t.priority == 'low' %} <span class="pill nodot">low</span>{% endif %}
+            {% if t.notes %}<div class="sub">{{ t.notes|truncate(140) }}</div>{% endif %}</td>
+          <td class="small">{% if t.person %}<a href="{{ url_for('people.detail', person_id=t.person.id) }}">{{ t.person.display_name }}</a>{% endif %}
+            {% if t.deal %}<div><a href="{{ url_for('deals.detail', deal_id=t.deal.id) }}">{{ t.deal.title }}</a></div>{% endif %}
+            {% if t.company and not t.person %}<a href="{{ url_for('companies.detail', company_id=t.company.id) }}">{{ t.company.name }}</a>{% endif %}</td>
+          <td class="nowrap small {{ 'bad' if t.due_at and t.due_at < now and t.status == 'open' }}" style="{{ 'color:var(--bad)' if t.due_at and t.due_at < now and t.status == 'open' }}">{{ t.due_at|dt if t.due_at else '-' }}{% if t.status == 'done' %}<div class="muted">done {{ t.completed_at|ago }}</div>{% endif %}</td>
+          <td class="small">{{ t.assignee.label if t.assignee else '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {{ pager(page, request.args, url_for('tasks.index')) }}
+    {% else %}<div class="empty"><h3>{{ 'Nothing due' if view in ('today','overdue') else 'No tasks' }}</h3><p>Add tasks here or from a person, company or deal.</p></div>{% endif %}
+  </div>
+
+  <form method="post" action="{{ url_for('tasks.new') }}" class="card card-pad">{{ csrf_field() }}
+    <input type="hidden" name="next" value="{{ here }}">
+    <h2 class="mb2">New task</h2>
+    <div class="stack">
+      <label class="field"><span class="lbl">Title</span><input type="text" name="title" required></label>
+      <label class="field"><span class="lbl">Due <span class="faint">({{ s.timezone }})</span></span><input type="datetime-local" name="due_at"></label>
+      <div class="row"><label class="field grow"><span class="lbl">Priority</span><select name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label>
+        {% if users %}<label class="field grow"><span class="lbl">Assignee</span><select name="assignee_id"><option value="">Me</option>{% for u in users %}<option value="{{ u.id }}">{{ u.label }}</option>{% endfor %}</select></label>{% endif %}</div>
+      <label class="field"><span class="lbl">Person</span><input type="search" placeholder="Find a person (optional)" list="dl-task-people" data-lookup="{{ url_for('people.lookup') }}" data-target="task-person-id" autocomplete="off"><datalist id="dl-task-people"></datalist><input type="hidden" name="person_id" id="task-person-id"></label>
+      <label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="3"></textarea></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Add task</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, csrf_field %}
+{% block title %}API keys & Claude{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Keys for the REST API and for connecting Claude through the MCP server.</div></div></div>
+{% include "workspace/_tabs.html" %}
+{% if new_key %}
+<div class="card card-pad mb2">
+  <h2 class="mb1">Your new key</h2>
+  <div class="secret">{{ new_key }}</div>
+  <div class="row mt1"><button class="btn btn-sm" data-copy="{{ new_key }}">Copy</button><span class="small muted">It is shown only this once. Store it in your password manager.</span></div>
+</div>
+{% endif %}
+<div class="grid g-side" style="align-items:start">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Keys</h2></div>
+      {% if rows %}
+      <table class="tbl"><thead><tr><th>Name</th><th>Key</th><th>Scopes</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>
+      {% for k in rows %}
+        <tr><td><b>{{ k.name }}</b><div class="sub">created {{ k.created_at|day }}</div></td><td><code>oc_{{ k.prefix }}_…</code></td>
+          <td>{% for s in k.scopes %}<span class="tag">{{ s }}</span>{% endfor %}</td>
+          <td class="small muted">{{ k.last_used_at|ago if k.last_used_at else 'never' }}</td>
+          <td>{% if k.revoked_at %}{{ pill('archived', 'Revoked') }}{% elif not k.active %}{{ pill('paused', 'Expired') }}{% else %}{{ pill('active', 'Active') }}{% endif %}</td>
+          <td class="right">{% if not k.revoked_at %}<form method="post">{{ csrf_field() }}<input type="hidden" name="action" value="revoke"><input type="hidden" name="key_id" value="{{ k.id }}"><button class="btn btn-sm btn-danger" data-confirm="Revoke '{{ k.name }}'? Anything using it stops working immediately.">Revoke</button></form>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table>
+      {% else %}<div class="empty"><h3>No keys yet</h3><p>Create one to connect Claude or another tool.</p></div>{% endif %}
+    </div>
+
+    <div class="card card-pad">
+      <h2 class="mb1">{{ icon('link') }} Connect Claude (MCP)</h2>
+      <p class="small">The MCP server lets Claude search and update this CRM: people, companies, deals, notes, tasks, campaigns and the inbox. Every change Claude makes is recorded in the audit log under the key's name, and sending email / WhatsApp needs the <b>send</b> scope.</p>
+      <h3 class="mt2">Claude Code (remote, over HTTP)</h3>
+      <div class="code-block">claude mcp add --transport http outreach-crm {{ base }}/mcp --header "Authorization: Bearer YOUR_KEY"</div>
+      <p class="hint">Requires the <code>mcp</code> service from docker-compose and a proxy from <code>{{ base }}/mcp</code> to port {{ mcp_port }} (see README). Locally: <code>http://localhost:{{ mcp_port }}/mcp</code>.</p>
+      <h3 class="mt2">Claude Desktop / Claude Code on the same machine (stdio)</h3>
+      <div class="code-block">{
+  "mcpServers": {
+    "outreach-crm": {
+      "command": "docker",
+      "args": ["compose", "-f", "/path/to/customer-outreach/docker-compose.yml",
+               "exec", "-T", "-e", "OUTREACH_API_KEY=YOUR_KEY",
+               "web", "python", "-m", "app.mcp_server", "--stdio"]
+    }
+  }
+}</div>
+      <h3 class="mt2">REST API</h3>
+      <div class="code-block">curl -H "Authorization: Bearer YOUR_KEY" {{ base }}/api/v1/people?q=hotel</div>
+    </div>
+  </div>
+
+  <form method="post" class="card card-pad">{{ csrf_field() }}<input type="hidden" name="action" value="create">
+    <h2 class="mb2">Create a key</h2>
+    <div class="stack">
+      <label class="field"><span class="lbl">Name</span><input type="text" name="name" placeholder="Claude Desktop - Alkafi" required></label>
+      <div><span class="lbl">Permissions</span>
+        <label class="check"><input type="checkbox" name="scope_read" value="1" checked><span><b>read</b> <div class="hint">search and view everything</div></span></label>
+        <label class="check"><input type="checkbox" name="scope_write" value="1" checked><span><b>write</b> <div class="hint">create / update people, companies, deals, notes, tasks; enroll in campaigns</div></span></label>
+        <label class="check"><input type="checkbox" name="scope_send" value="1"><span><b>send</b> <div class="hint">send email / WhatsApp messages and start or pause campaigns</div></span></label></div>
+      <label class="field"><span class="lbl">Expires after (days)</span><input type="number" name="expires_days" min="1" placeholder="never"></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Create key</button></div>
+  </form>
+</div>
+{% endblock %}

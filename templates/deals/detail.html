@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, avatar, csrf_field, custom_field_inputs, custom_field_values, task_row %}
+{% block title %}{{ d.title }}{% endblock %}
+{% block content %}
+{% set here = url_for('deals.detail', deal_id=d.id) %}
+<div class="crumbs"><a href="{{ url_for('deals.index', pipeline=d.pipeline_id) }}">Deals</a> / {{ d.title }}</div>
+<div class="page-head">
+  <div><h1>{{ d.title }} {{ pill(d.status) }}</h1>
+    <div class="facts"><b class="money" style="color:var(--text);font-size:18px">{{ d.amount|money(d.currency) }}</b>
+      <span>{{ d.pipeline.name }}</span>
+      {% if d.company %}<a href="{{ url_for('companies.detail', company_id=d.company.id) }}">{{ icon('building') }}{{ d.company.name }}</a>{% endif %}
+      {% if d.person %}<a href="{{ url_for('people.detail', person_id=d.person.id) }}">{{ icon('person') }}{{ d.person.display_name }}</a>{% endif %}
+      {% if d.expected_close_date %}<span>{{ icon('calendar') }}closes {{ d.expected_close_date.strftime('%d %b %Y') }}</span>{% endif %}
+      {% if d.owner %}<span>owner {{ d.owner.label }}</span>{% endif %}
+      {% if d.closed_at %}<span>closed {{ d.closed_at|day }}</span>{% endif %}
+    </div></div>
+  <div class="page-actions">
+    <form method="post" action="{{ url_for('deals.delete', deal_id=d.id) }}">{{ csrf_field() }}<button class="btn btn-danger" data-confirm="Delete this deal?">{{ icon('trash') }}</button></form>
+  </div>
+</div>
+
+<div class="card card-pad mb2">
+  <form method="post" action="{{ url_for('deals.move', deal_id=d.id) }}" class="stage-steps">{{ csrf_field() }}
+    {% for st in d.pipeline.stages %}<button name="stage_id" value="{{ st.id }}" class="{{ st.kind }} {{ 'on' if st.id == d.stage_id }}" {% if st.kind == 'lost' %}data-confirm="Mark this deal as lost?"{% endif %}>{{ st.name }}</button>{% endfor %}
+  </form>
+  {% if d.status == 'lost' %}<p class="small muted mt1">Lost{% if d.lost_reason %}: {{ d.lost_reason }}{% endif %}</p>{% endif %}
+</div>
+
+<div class="grid" style="grid-template-columns:minmax(0,1.7fr) minmax(310px,1fr);align-items:start">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>Notes &amp; activity</h2></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('deals.log_activity', deal_id=d.id) }}" class="stack mb2">{{ csrf_field() }}
+          <div class="row"><select name="kind" style="max-width:150px">{% for k, label in activity_kinds %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select><input type="text" name="subject" placeholder="Summary" style="flex:1"></div>
+          <textarea name="body" rows="3" placeholder="What happened, next steps…"></textarea>
+          <div><button class="btn btn-sm btn-primary">Save</button></div>
+        </form>
+        <ul class="feed">
+        {% for a in activities %}
+          <li><span class="mark {{ a.kind }}">{{ icon('note' if a.kind == 'note' else ('phone' if a.kind == 'call' else 'calendar')) }}</span>
+            <div><div class="head"><b>{{ a.subject or a.kind|capitalize }}</b>{% if a.user %}<span class="small muted">by {{ a.user.label }}</span>{% endif %}<time>{{ a.occurred_at|ago }}</time></div>
+              {% if a.body %}<div class="text">{{ a.body }}</div>{% endif %}</div></li>
+        {% else %}<li style="display:block" class="muted small">Nothing logged yet.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <form method="post" action="{{ url_for('deals.edit', deal_id=d.id) }}" class="card card-pad">{{ csrf_field() }}
+      <h2 class="mb2">Details</h2>
+      <div class="stack">
+        <label class="field"><span class="lbl">Title</span><input type="text" name="title" value="{{ d.title }}" required></label>
+        <div class="row"><label class="field grow"><span class="lbl">Amount</span><input type="text" name="amount" value="{{ d.amount if d.amount is not none else '' }}"></label>
+          <label class="field" style="width:90px"><span class="lbl">Currency</span><input type="text" name="currency" value="{{ d.currency }}" maxlength="3"></label></div>
+        <label class="field"><span class="lbl">Expected close</span><input type="date" name="expected_close_date" value="{{ d.expected_close_date.isoformat() if d.expected_close_date else '' }}"></label>
+        {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner_id"><option value="">Unassigned</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if d.owner_id == u.id }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+        <label class="field"><span class="lbl">Source</span><input type="text" name="source" value="{{ d.source or '' }}"></label>
+        {% if d.status == 'lost' %}<label class="field"><span class="lbl">Lost reason</span><input type="text" name="lost_reason" value="{{ d.lost_reason or '' }}"></label>{% endif %}
+        <div class="form-grid" style="grid-template-columns:1fr">{{ custom_field_inputs(fields, d.attributes) }}</div>
+        <div><button class="btn btn-primary btn-sm">Save</button></div>
+      </div>
+    </form>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>People on this deal</h2></div>
+      <ul class="list-plain">
+        {% for p in d.people %}<li>{{ avatar(p.display_name, 'sm') }}<a class="grow" href="{{ url_for('people.detail', person_id=p.id) }}">{{ p.display_name }}</a>
+          <span class="small muted">{{ roles.get(p.id) or '' }}{% if p.id == d.person_id %} · main{% endif %}</span>
+          <form method="post" action="{{ url_for('deals.people', deal_id=d.id) }}">{{ csrf_field() }}<input type="hidden" name="person_id" value="{{ p.id }}"><button class="btn btn-ghost btn-sm" name="action" value="remove">&times;</button></form></li>
+        {% else %}<li class="muted small">Nobody linked.</li>{% endfor %}
+      </ul>
+      <form method="post" action="{{ url_for('deals.people', deal_id=d.id) }}" class="row mt1">{{ csrf_field() }}
+        <input type="search" placeholder="Find a person…" style="flex:2;min-width:150px" list="dl-deal-people" data-lookup="{{ url_for('people.lookup') }}" data-target="deal-person-id" autocomplete="off">
+        <datalist id="dl-deal-people"></datalist><input type="hidden" name="person_id" id="deal-person-id" required>
+        <input type="text" name="role" placeholder="role" style="flex:1;min-width:90px">
+        <button class="btn btn-sm">Add</button></form>
+    </div>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>Tasks</h2></div>
+      {% if tasks %}<ul class="task-list">{% for t in tasks %}{{ task_row(t, now, here) }}{% endfor %}</ul>{% else %}<p class="small muted">No open tasks.</p>{% endif %}
+      <form method="post" action="{{ url_for('tasks.new') }}" class="stack mt1">{{ csrf_field() }}
+        <input type="hidden" name="deal_id" value="{{ d.id }}"><input type="hidden" name="person_id" value="{{ d.person_id or '' }}"><input type="hidden" name="next" value="{{ here }}">
+        <input type="text" name="title" placeholder="Send proposal, book demo…" required>
+        <div class="row"><input type="datetime-local" name="due_at" style="max-width:210px"><button class="btn btn-sm">Add task</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

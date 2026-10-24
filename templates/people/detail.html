@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, avatar, csrf_field, custom_field_inputs, custom_field_values, task_row %}
+{% block title %}{{ p.display_name }}{% endblock %}
+{% block content %}
+{% set here = url_for('people.detail', person_id=p.id) %}
+<div class="crumbs"><a href="{{ url_for('people.index') }}">People</a> / {{ p.display_name }}</div>
+<div class="page-head">
+  <div class="profile-head">
+    {{ avatar(p.display_name, 'lg') }}
+    <div>
+      <h1>{{ p.display_name }} {{ pill(p.lifecycle_stage, p.lifecycle_stage|upper if p.lifecycle_stage in ('mql','sql') else None) }}
+        {% if p.lead_status %}<span class="pill nodot">{{ p.lead_status|replace('_',' ') }}</span>{% endif %}
+        {% if p.do_not_contact %}<span class="pill bad">Do not contact</span>{% endif %}</h1>
+      <div class="facts">
+        {% if p.job_title %}<span>{{ p.job_title }}</span>{% endif %}
+        {% if p.company %}<a href="{{ url_for('companies.detail', company_id=p.company.id) }}">{{ icon('building') }}{{ p.company.name }}</a>{% endif %}
+        {% if p.email %}<a href="mailto:{{ p.email }}">{{ icon('mail') }}{{ p.email }}</a>{% endif %}
+        {% if p.phone %}<a href="tel:{{ p.phone }}">{{ icon('phone') }}{{ p.phone }}</a>{% endif %}
+        {% if p.owner %}<span>{{ icon('person') }}{{ p.owner.label }}</span>{% endif %}
+        <span>added {{ p.created_at|day }}{% if p.source %} via {{ p.source }}{% endif %}</span>
+      </div>
+    </div>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('deals.new', person_id=p.id) }}">{{ icon('deal') }} New deal</a>
+    <a class="btn" href="{{ url_for('people.merge', person_id=p.id) }}">{{ icon('merge') }} Merge</a>
+    <form method="post" action="{{ url_for('people.delete', person_id=p.id) }}">{{ csrf_field() }}<button class="btn btn-danger" data-confirm="Delete {{ p.display_name }} with their campaign history, notes, tasks and conversations?">{{ icon('trash') }}</button></form>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:minmax(0,1.7fr) minmax(310px,1fr);align-items:start">
+  <div class="stack">
+    <div class="card" id="compose">
+      <div class="card-head"><h2>Send a message</h2>
+        <span class="small muted">{% if not channels.email and not channels.whatsapp %}No channel connected · <a href="{{ url_for('workspace.integrations') }}">set up</a>{% endif %}</span></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('people.message', person_id=p.id) }}" class="stack" data-channel-form>
+          {{ csrf_field() }}
+          <div class="row">
+            <label class="check"><input type="radio" name="channel" value="email" {{ 'checked' if p.email or not p.phone }} {{ 'disabled' if not p.email }}><span>Email{% if not p.email %} <span class="faint">(no address)</span>{% endif %}</span></label>
+            <label class="check"><input type="radio" name="channel" value="whatsapp" {{ 'checked' if p.phone and not p.email }} {{ 'disabled' if not p.phone }}><span>WhatsApp{% if not p.phone %} <span class="faint">(no number)</span>{% elif not channels.whatsapp %} <span class="faint">(not connected)</span>{% endif %}</span></label>
+          </div>
+          <div data-for="email"><input type="text" name="subject" placeholder="Subject (blank = continue the last thread)"></div>
+          <textarea name="body" rows="5" placeholder="Write your message… (your signature from Settings is added to emails)"></textarea>
+          <div data-for="whatsapp" class="small muted">
+            {% if wa_window %}WhatsApp 24-hour window is open: free text is fine.{% else %}No reply from them in the last 24 hours, so WhatsApp only allows an approved template:{% endif %}
+            <div class="row mt1">
+              <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in wa_templates %}{% if t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endif %}{% endfor %}<option value="hello_world">hello_world (Meta sample)</option></select>
+              <input type="text" name="wa_language" value="en_US" style="max-width:90px" title="Template language">
+              <input type="text" name="wa_params" placeholder="template values: {{ p.first_name or 'Name' }} | …" style="max-width:280px">
+            </div>
+          </div>
+          <div class="row"><button class="btn btn-primary" data-once="1">{{ icon('send') }} Send now</button><span class="small muted">Sent immediately from your connected account and logged in the inbox.</span></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Log activity</h2></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('people.log_activity', person_id=p.id) }}">
+          {{ csrf_field() }}
+          <div class="form-grid">
+            <label class="field"><span class="lbl">Type</span><select name="kind">{% for k, label in activity_kinds %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+            <label class="field"><span class="lbl">When <span class="faint">({{ s.timezone }}, blank = now)</span></span><input type="datetime-local" name="occurred_at"></label>
+            <label class="field full"><span class="lbl">Summary</span><input type="text" name="subject" placeholder="e.g. Intro call - interested in a demo"></label>
+            <label class="field full"><span class="lbl">Notes</span><textarea name="body" rows="3"></textarea></label>
+            <label class="field"><span class="lbl">Duration (minutes)</span><input type="number" name="duration" min="0"></label>
+            <label class="field"><span class="lbl">Outcome</span><input type="text" name="outcome" placeholder="connected, voicemail, booked…"></label>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary btn-sm">Save to timeline</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card" id="timeline">
+      <div class="card-head"><h2>Timeline</h2><span class="small muted">notes, calls, messages, campaign email, tasks</span></div>
+      <div class="card-body" style="padding-top:4px">
+        <ul class="feed">
+        {% for i in timeline %}
+          {% set k = i.kind %}
+          <li>
+            <span class="mark {{ 'in' if k.endswith('_in') or k == 'campaign_replied' else ('out' if k.endswith('_out') or k == 'campaign_sent' else k) }}">{{ icon('note' if k == 'note' else ('phone' if k == 'call' else ('calendar' if k == 'meeting' else ('check' if k == 'task' else ('chat' if k.startswith('whatsapp') else 'mail'))))) }}</span>
+            <div>
+              <div class="head"><b>{{ i.title }}</b>
+                {% if i.campaign %}<a class="small" href="{{ url_for('enrollments.detail', enrollment_id=i.enrollment_id) }}">{{ i.campaign.name }}</a>{% endif %}
+                {% if i.conversation_id %}<a class="small" href="{{ url_for('inbox.index', c=i.conversation_id) }}">open thread</a>{% endif %}
+                {% if i.status == 'failed' %}<span class="pill failed">failed</span>{% endif %}
+                {% if i.user %}<span class="small muted">by {{ i.user }}</span>{% endif %}
+                <time title="{{ i.when|dt }}">{{ i.when|ago }}</time>
+                {% if i.activity %}<form method="post" action="{{ url_for('tasks.delete_activity', activity_id=i.activity.id) }}">{{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}#timeline"><button class="btn btn-ghost btn-sm" title="Delete" data-confirm="Remove this entry from the timeline?">&times;</button></form>{% endif %}
+              </div>
+              {% if i.body %}<div class="text">{{ i.body|truncate(1200) }}</div>{% endif %}
+            </div>
+          </li>
+        {% else %}<li style="display:block" class="muted">Nothing yet. Log a call, send a message or enroll them in a campaign.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <form method="post" action="{{ url_for('people.edit', person_id=p.id) }}" class="card card-pad">
+      {{ csrf_field() }}
+      <details class="fold" {{ 'open' if not p.email and not p.phone }}>
+        <summary><h2 style="display:inline">Profile</h2></summary>
+        <div class="stack mt1">
+          <div class="row"><label class="field grow"><span class="lbl">First name</span><input type="text" name="first_name" value="{{ p.first_name or '' }}"></label>
+            <label class="field grow"><span class="lbl">Last name</span><input type="text" name="last_name" value="{{ p.last_name or '' }}"></label></div>
+          <label class="field"><span class="lbl">Primary email</span><input type="email" name="email" value="{{ p.email or '' }}"></label>
+          <label class="field"><span class="lbl">Primary phone</span><input type="text" name="phone" value="{{ p.phone or '' }}"></label>
+          <label class="field"><span class="lbl">Job title</span><input type="text" name="job_title" value="{{ p.job_title or '' }}"></label>
+          <div class="row"><label class="field grow"><span class="lbl">Company</span><input type="text" name="company" value="{{ p.company.name if p.company else '' }}"></label>
+            <label class="field grow"><span class="lbl">Company website</span><input type="text" name="company_website" value="{{ p.company.website if p.company and p.company.website else '' }}"></label></div>
+          <div class="row"><label class="field grow"><span class="lbl">Lifecycle</span><select name="lifecycle_stage">{% for k, label in lifecycle_stages %}<option value="{{ k }}" {{ 'selected' if p.lifecycle_stage == k }}>{{ label }}</option>{% endfor %}</select></label>
+            <label class="field grow"><span class="lbl">Lead status</span><select name="lead_status"><option value="">-</option>{% for k, label in lead_statuses %}<option value="{{ k }}" {{ 'selected' if p.lead_status == k }}>{{ label }}</option>{% endfor %}</select></label></div>
+          <div class="row">{% if users %}<label class="field grow"><span class="lbl">Owner</span><select name="owner_id"><option value="">Unassigned</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if p.owner_id == u.id }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+            <label class="field grow"><span class="lbl">Source</span><input type="text" name="source" value="{{ p.source or '' }}"></label></div>
+          <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ tags }}" list="tag-list" placeholder="comma separated"><datalist id="tag-list">{% for t in all_tags %}<option value="{{ t }}">{% endfor %}</datalist></label>
+          <div class="form-grid" style="grid-template-columns:1fr">{{ custom_field_inputs(fields, p.attributes) }}</div>
+          <label class="check"><input type="checkbox" name="do_not_contact" value="1" {{ 'checked' if p.do_not_contact }}><span>Do not contact <div class="hint">Blocks campaign emails and messages on every channel.</div></span></label>
+          <div><button class="btn btn-primary btn-sm">Save profile</button> <a class="small" href="{{ url_for('workspace.fields') }}">manage custom fields</a></div>
+        </div>
+      </details>
+      {% if fields %}<dl class="kv mt2">{{ custom_field_values(fields, p.attributes) }}</dl>{% endif %}
+      {% if p.tags %}<div class="mt1">{% for t in p.tags %}<a class="tag tag-link" href="{{ url_for('people.index', tag=t.name) }}">{{ t.name }}</a>{% endfor %}</div>{% endif %}
+    </form>
+
+    <div class="card card-pad" id="tasks">
+      <div class="section-title"><h2>Tasks</h2></div>
+      {% if tasks %}<ul class="task-list">{% for t in tasks %}{{ task_row(t, now, here ~ '#tasks') }}{% endfor %}</ul>{% else %}<p class="small muted">No open tasks.</p>{% endif %}
+      <form method="post" action="{{ url_for('tasks.new') }}" class="stack mt1">
+        {{ csrf_field() }}<input type="hidden" name="person_id" value="{{ p.id }}"><input type="hidden" name="next" value="{{ here }}#tasks">
+        <input type="text" name="title" placeholder="Follow up: call back, send proposal…" required>
+        <div class="row"><input type="datetime-local" name="due_at" style="max-width:210px"><select name="priority" style="max-width:120px"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select><button class="btn btn-sm">Add task</button></div>
+      </form>
+    </div>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>Deals</h2><a class="btn btn-sm" href="{{ url_for('deals.new', person_id=p.id) }}">{{ icon('plus') }}</a></div>
+      {% if deals %}<ul class="list-plain">{% for d in deals %}<li><a class="grow" href="{{ url_for('deals.detail', deal_id=d.id) }}">{{ d.title }}</a><span class="money small">{{ d.amount|money(d.currency) }}</span>{{ pill(d.status, d.stage.name if d.status == 'open' else None) }}</li>{% endfor %}</ul>
+      {% else %}<p class="small muted">No deals yet.</p>{% endif %}
+    </div>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>Campaigns</h2></div>
+      {% if p.enrollments %}<ul class="list-plain">{% for e in p.enrollments %}<li><a class="grow" href="{{ url_for('enrollments.detail', enrollment_id=e.id) }}">{{ e.campaign.name }}</a><span class="small muted">stage {{ e.stage or 0 }}</span>
+        {% if e.replied %}{{ pill('replied') }}{% elif e.unsubscribed %}{{ pill('unsubscribed') }}{% elif e.bounced %}{{ pill('bounced') }}{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="small muted">Not in any campaign.</p>{% endif %}
+      {% if p.email %}
+      <form method="post" action="{{ url_for('people.enroll_one', person_id=p.id) }}" class="row mt1">{{ csrf_field() }}
+        <select name="campaign_id" required style="flex:1"><option value="">Enroll in…</option>{% for cp in campaigns if cp.id not in enrolled_ids %}<option value="{{ cp.id }}">{{ cp.name }}</option>{% endfor %}</select>
+        <button class="btn btn-sm">Enroll</button></form>
+      {% endif %}
+    </div>
+
+    <div class="card card-pad" id="identities">
+      <div class="section-title"><h2>Emails, phones &amp; profiles</h2></div>
+      <ul class="list-plain">
+      {% for cp in p.contact_points %}
+        <li><span class="pill nodot">{{ cp.kind }}</span><span class="grow" style="word-break:break-all">{{ cp.value }}{% if cp.label %} <span class="faint small">({{ cp.label }})</span>{% endif %}</span>
+          {% if cp.is_primary %}<span class="pill good nodot">primary</span>{% endif %}
+          {% if cp.status != 'active' %}<span class="pill {{ 'bad' if cp.status in ('bounced','invalid') else 'warn' }} nodot">{{ cp.status }}</span>{% endif %}
+          <form method="post" action="{{ url_for('people.points', person_id=p.id) }}">{{ csrf_field() }}<input type="hidden" name="point_id" value="{{ cp.id }}">
+            {% if not cp.is_primary and cp.kind in ('email','phone') %}<button class="btn btn-ghost btn-sm" name="action" value="primary" title="Make primary">&#9733;</button>{% endif %}
+            <button class="btn btn-ghost btn-sm" name="action" value="delete" title="Remove" data-confirm="Remove {{ cp.value }}?">&times;</button></form></li>
+      {% else %}<li class="muted small">No identities yet.</li>{% endfor %}
+      </ul>
+      <form method="post" action="{{ url_for('people.points', person_id=p.id) }}" class="row mt1">{{ csrf_field() }}<input type="hidden" name="action" value="add">
+        <select name="kind" style="max-width:120px">{% for k in ['email','phone','whatsapp','linkedin','other'] %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+        <input type="text" name="value" placeholder="address / number / URL" style="flex:1;min-width:150px" required>
+        <button class="btn btn-sm">Add</button></form>
+    </div>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>Consent</h2></div>
+      <dl class="kv">
+        {% for ch in ['email', 'whatsapp'] %}{% set c = consents.get(ch) %}
+        <dt>{{ ch|capitalize }}</dt>
+        <dd class="row">{% if c %}{{ pill(c.status) }} <span class="small muted">{{ c.recorded_at|day }}{% if c.source %} · {{ c.source|truncate(40) }}{% endif %}</span>{% else %}<span class="small muted">not recorded</span>{% endif %}
+          <form method="post" action="{{ url_for('people.consent', person_id=p.id) }}">{{ csrf_field() }}<input type="hidden" name="channel" value="{{ ch }}">
+            {% if not c or c.status == 'revoked' %}<button class="btn btn-ghost btn-sm" name="status" value="granted">grant</button>{% endif %}
+            {% if not c or c.status == 'granted' %}<button class="btn btn-ghost btn-sm" name="status" value="revoked" {% if ch == 'email' %}data-confirm="Opt out of email? Their campaigns stop."{% endif %}>opt out</button>{% endif %}</form></dd>
+        {% endfor %}
+      </dl>
+    </div>
+
+    {% if conversations %}
+    <div class="card card-pad">
+      <div class="section-title"><h2>Conversations</h2></div>
+      <ul class="list-plain">{% for cv in conversations %}<li><span class="pill {{ cv.channel }} nodot">{{ cv.channel }}</span><a class="grow" href="{{ url_for('inbox.index', c=cv.id) }}">{{ cv.subject or 'Conversation' }}</a>{{ pill(cv.status) }}<span class="small muted">{{ cv.last_message_at|ago }}</span></li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

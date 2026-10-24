@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pill, pager %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+{% set args = request.args %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Every change made through the panel, the API, Claude (MCP) or imports.</div></div></div>
+{% include "workspace/_tabs.html" %}
+<div class="card">
+  <form class="filters" method="get" data-autosubmit>
+    <label class="field"><span class="lbl">Record type</span><select name="entity"><option value="">Any</option>{% for e in entities %}<option value="{{ e }}" {{ 'selected' if args.get('entity') == e }}>{{ e }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Done by</span><select name="actor_type"><option value="">Anyone</option>{% for k in ['user','api','mcp','system'] %}<option value="{{ k }}" {{ 'selected' if args.get('actor_type') == k }}>{{ 'Claude (MCP)' if k == 'mcp' else k }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Record id</span><input type="text" name="entity_id" value="{{ args.get('entity_id','') }}" style="max-width:100px"></label>
+    <button class="btn btn-primary">Apply</button><a class="btn btn-ghost" href="{{ url_for('workspace.audit_log') }}">Reset</a>
+  </form>
+  {% if page.items %}
+  <div class="table-wrap"><table class="tbl tbl-compact">
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Changes</th></tr></thead><tbody>
+    {% for a in page.items %}
+      <tr><td class="nowrap small">{{ a.created_at|dt }}</td>
+        <td class="small">{{ pill('replied' if a.actor_type == 'mcp' else 'info', 'Claude' if a.actor_type == 'mcp' else a.actor_type) }} {{ a.actor_label or '' }}</td>
+        <td>{{ a.action }}</td>
+        <td class="nowrap">{% set link = {'person': 'people.detail', 'company': 'companies.detail', 'deal': 'deals.detail'}.get(a.entity_type) %}
+          {% if link and a.entity_id and a.action != 'delete' %}<a href="{{ url_for(link, **{('person_id' if a.entity_type == 'person' else ('company_id' if a.entity_type == 'company' else 'deal_id')): a.entity_id|int}) }}">{{ a.entity_type }} #{{ a.entity_id }}</a>{% else %}{{ a.entity_type }} #{{ a.entity_id }}{% endif %}</td>
+        <td class="small" style="max-width:520px">{% if a.changes %}{% for k, v in a.changes.items() %}<div><b>{{ k }}</b>: {% if v is sequence and v is not string and v|length == 2 %}<span class="muted">{{ v[0] if v[0] is not none else '∅' }}</span> → {{ v[1] if v[1] is not none else '∅' }}{% else %}{{ v }}{% endif %}</div>{% endfor %}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  {{ pager(page, args, url_for('workspace.audit_log')) }}
+  {% else %}<div class="empty"><h3>Nothing recorded yet</h3></div>{% endif %}
+</div>
+{% endblock %}

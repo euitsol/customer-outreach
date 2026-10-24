@@ -1,11 +1,12 @@
 """Public endpoints hit by recipients: open pixel, click redirect, unsubscribe."""
-from datetime import datetime, timedelta
-from app.clock import utcnow
+from datetime import timedelta
 
 from flask import Blueprint, Response, abort, redirect, render_template, request
 
-from app.models import ClickLink, Contact, Event, Message
-from app.services import add_suppression, cancel_queued
+from app.clock import utcnow
+from app.crm import people as people_svc
+from app.models import ClickLink, Enrollment, Event, Message
+from app.services import mark_unsubscribed
 from app.views.common import db
 
 bp = Blueprint("tracking", __name__)
@@ -19,17 +20,20 @@ PIXEL_GIF = bytes.fromhex(
 def track_open(token):
     s = db()
     msg = s.query(Message).filter(Message.open_token == token).first()
-    contact_id = stage = sent_at = None
+    enrollment_id = stage = sent_at = None
     if msg:
-        contact_id, stage, sent_at = msg.contact_id, msg.position, msg.sent_at
+        enrollment_id, stage, sent_at = msg.enrollment_id, msg.position, msg.sent_at
     else:  # emails sent before the stages upgrade stored the token on an event
         ev = s.query(Event).filter(Event.type == "open_token", Event.detail == token).first()
         if ev:
-            contact_id, stage = ev.contact_id, ev.stage
+            enrollment_id, stage = ev.enrollment_id, ev.stage
     # ignore the instant "open" caused by mail servers scanning the message on arrival
     scanner = sent_at is not None and utcnow() - sent_at < timedelta(seconds=8)
-    if contact_id and not scanner:
-        s.add(Event(contact_id=contact_id, stage=stage, type="opened"))
+    if enrollment_id and not scanner:
+        s.add(Event(enrollment_id=enrollment_id, stage=stage, type="opened"))
+        e = s.get(Enrollment, enrollment_id)
+        if e and e.person:
+            people_svc.touch(e.person)
         s.commit()
     resp = Response(PIXEL_GIF, mimetype="image/gif")
     resp.headers["Cache-Control"] = "no-store, max-age=0"
@@ -42,38 +46,35 @@ def track_click(token):
     link = s.query(ClickLink).filter(ClickLink.token == token).first()
     if not link or not link.target_url.lower().startswith(("http://", "https://")):
         abort(404)
-    s.add(Event(contact_id=link.contact_id, stage=link.stage, type="clicked", detail=link.target_url[:300]))
+    s.add(Event(enrollment_id=link.enrollment_id, stage=link.stage, type="clicked", detail=link.target_url[:300]))
+    e = s.get(Enrollment, link.enrollment_id)
+    if e and e.person:
+        people_svc.touch(e.person)
     s.commit()
     return redirect(link.target_url, code=302)
 
 
-def _contact_for_unsub(token):
+def _enrollment_for_unsub(token):
     s = db()
     msg = s.query(Message).filter(Message.unsub_token == token).first()
     if msg:
-        return msg.contact, msg.position
+        return msg.enrollment
     ev = s.query(Event).filter(Event.type == "unsub_token", Event.detail == token).first()
     if ev:
-        return s.get(Contact, ev.contact_id), ev.stage
-    return None, None
+        return s.get(Enrollment, ev.enrollment_id)
+    return None
 
 
 @bp.route("/t/u/<token>", methods=["GET", "POST"])
 def unsubscribe(token):
-    contact, stage = _contact_for_unsub(token)
-    if not contact:
+    enrollment = _enrollment_for_unsub(token)
+    if not enrollment:
         abort(404)
     # GET only asks for confirmation (link scanners fetch GET URLs); POST - from the button or
     # a mail client's one-click List-Unsubscribe - does the actual work.
     if request.method == "GET":
-        return render_template("unsubscribe.html", token=token, done=contact.unsubscribed)
+        return render_template("unsubscribe.html", token=token, done=enrollment.unsubscribed)
     s = db()
-    if not contact.unsubscribed:
-        contact.unsubscribed = True
-        s.add(Event(contact_id=contact.id, stage=stage, type="unsubscribed"))
-    add_suppression(s, contact.email, "Unsubscribed via email link")
-    for other in s.query(Contact).filter(Contact.email == contact.email):
-        other.unsubscribed = True
-        cancel_queued(s, [other.id])
+    mark_unsubscribed(s, enrollment)
     s.commit()
     return render_template("unsubscribe.html", token=token, done=True)

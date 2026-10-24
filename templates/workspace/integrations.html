@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, csrf_field %}
+{% block title %}Integrations{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Channels this CRM sends and receives on. Secrets live in the server's <code>.env</code>; this page shows their status.</div></div></div>
+{% include "workspace/_tabs.html" %}
+<div class="grid g2" style="align-items:start">
+  <div class="card card-pad">
+    <div class="section-title"><h2>{{ icon('mail') }} Email (SMTP + IMAP)</h2>{{ pill('active' if smtp_ok else 'failed', 'Connected' if smtp_ok else 'Not configured') }}</div>
+    <dl class="kv">
+      <dt>Sending</dt><dd>{{ config.SMTP_HOST or '-' }}{% if config.SMTP_HOST %}:{{ config.SMTP_PORT }}{% endif %} as {{ config.SENDER_EMAIL or '-' }}</dd>
+      <dt>Replies</dt><dd>{{ config.IMAP_HOST or 'IMAP not configured' }}</dd>
+    </dl>
+    <p class="small muted mt1">Campaign emails, one-to-one emails from People and the Inbox go out through this account. Replies are matched to people and land in the Inbox. Configure <code>SMTP_*</code> / <code>IMAP_*</code> in <code>.env</code>; test from <a href="{{ url_for('admin.settings') }}">Sending settings</a>.</p>
+  </div>
+
+  <div class="card card-pad">
+    <div class="section-title"><h2>{{ icon('whatsapp') }} WhatsApp Business</h2>{{ pill('active' if wa_ok else 'paused', 'Connected' if wa_ok else 'Not connected') }}</div>
+    <dl class="kv">
+      <dt>Phone number id</dt><dd>{{ config.WHATSAPP_PHONE_NUMBER_ID or '-' }}</dd>
+      <dt>Access token</dt><dd>{{ 'set' if config.WHATSAPP_TOKEN else 'missing' }}</dd>
+      <dt>App secret</dt><dd>{{ 'set' if config.WHATSAPP_APP_SECRET else 'missing (webhooks are rejected)' }}</dd>
+      <dt>Verify token</dt><dd>{{ 'set' if config.WHATSAPP_VERIFY_TOKEN else 'missing' }}</dd>
+      <dt>Webhook URL</dt><dd><code>{{ base }}/webhooks/whatsapp</code> <button class="btn btn-ghost btn-sm" data-copy="{{ base }}/webhooks/whatsapp">copy</button></dd>
+    </dl>
+    <details class="fold mt1"><summary>How to connect</summary>
+      <ol class="small" style="padding-left:18px">
+        <li>In <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">Meta for Developers</a> create a Business app and add the WhatsApp product.</li>
+        <li>Add your number, then copy the <b>Phone number ID</b> and a permanent <b>system-user access token</b> (with <code>whatsapp_business_messaging</code>).</li>
+        <li>Put them in <code>.env</code> as <code>WHATSAPP_PHONE_NUMBER_ID</code> and <code>WHATSAPP_TOKEN</code>, plus <code>WHATSAPP_APP_SECRET</code> (App settings &gt; Basic) and a <code>WHATSAPP_VERIFY_TOKEN</code> you make up.</li>
+        <li>Redeploy, then in WhatsApp &gt; Configuration set the webhook URL above with that verify token and subscribe to <b>messages</b>.</li>
+        <li>Send the test below. New conversations must start with an approved template; once someone writes to you, free text is allowed for 24 hours.</li>
+      </ol>
+    </details>
+    {% if wa_ok %}
+    <form method="post" class="row mt2">{{ csrf_field() }}<input type="hidden" name="action" value="wa_test">
+      <input type="text" name="to" placeholder="+353 87 123 4567" style="max-width:180px" required>
+      <input type="text" name="template" value="hello_world" style="max-width:140px">
+      <input type="text" name="language" value="en_US" style="max-width:80px">
+      <button class="btn btn-sm">Send test template</button></form>
+    {% endif %}
+  </div>
+
+  <div class="card card-pad">
+    <div class="section-title"><h2>{{ icon('link') }} Claude (MCP server)</h2>{{ pill('active' if keys else 'paused', (keys ~ ' active key' ~ ('s' if keys != 1 else '')) if keys else 'No key yet') }}</div>
+    <p class="small">Lets Claude (Claude Desktop, Claude Code, or claude.ai with a remote connector) look up and update this CRM, log notes, create tasks and deals, and draft or send messages with your permission.</p>
+    <a class="btn btn-sm mt1" href="{{ url_for('workspace.api_keys') }}">Create a key &amp; connection steps</a>
+  </div>
+
+  <div class="card card-pad">
+    <div class="section-title"><h2>{{ icon('plug') }} REST API</h2></div>
+    <p class="small">JSON API at <code>{{ base }}/api/v1</code> for Zapier/Make/n8n or your own scripts: people, companies, deals, tasks, notes, campaigns, conversations. Authenticate with an API key.</p>
+    <div class="code-block">GET  /api/v1/search?q=…
+GET  /api/v1/people   POST /api/v1/people   PATCH /api/v1/people/&lt;id&gt;
+POST /api/v1/people/&lt;id&gt;/messages   (scope: send)
+GET  /api/v1/deals    POST /api/v1/deals    PATCH /api/v1/deals/&lt;id&gt;
+POST /api/v1/activities   POST /api/v1/tasks
+POST /api/v1/campaigns/&lt;id&gt;/enrollments</div>
+  </div>
+</div>
+
+<div class="card mt2">
+  <div class="card-head"><h2>Channel accounts</h2></div>
+  <table class="tbl"><thead><tr><th>Channel</th><th>Name</th><th>Address</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for a in accounts %}
+    <tr><td><span class="pill {{ a.kind }} nodot">{{ a.kind }}</span></td><td>{{ a.name }}</td><td>{{ a.address or a.external_id or '' }}</td><td>{{ pill(a.status) }}</td>
+      <td class="right"><form method="post" class="row" style="justify-content:flex-end">{{ csrf_field() }}<input type="hidden" name="action" value="account"><input type="hidden" name="account_id" value="{{ a.id }}">
+        <input type="text" name="name" value="{{ a.name }}" class="input-sm" style="max-width:180px"><select name="status" class="input-sm" style="width:auto"><option value="active" {{ 'selected' if a.status == 'active' }}>active</option><option value="disabled" {{ 'selected' if a.status == 'disabled' }}>disabled</option></select><button class="btn btn-sm">Save</button></form></td></tr>
+  {% endfor %}
+  </tbody></table>
+</div>
+
+{% if recent_hooks %}
+<div class="card mt2">
+  <div class="card-head"><h2>Recent webhook deliveries</h2></div>
+  <table class="tbl tbl-compact"><thead><tr><th>Received</th><th>Provider</th><th>Type</th><th>Status</th><th>Error</th></tr></thead><tbody>
+  {% for h in recent_hooks %}<tr><td class="small">{{ h.received_at|dt }}</td><td>{{ h.provider }}</td><td>{{ h.event_type }}</td><td>{{ pill('sent' if h.status == 'processed' else h.status, h.status) }}</td><td class="small" style="color:var(--bad)">{{ (h.error or '')|truncate(120) }}</td></tr>{% endfor %}
+  </tbody></table>
+</div>
+{% endif %}
+{% endblock %}

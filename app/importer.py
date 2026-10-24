@@ -11,12 +11,11 @@ from datetime import date, datetime
 
 from dateutil import parser as dateparser
 
-from app.models import Campaign, CampaignStep, Contact, Message
 from app import settings as app_settings
+from app.crm import activities as activities_svc, audit, people as people_svc
 from app.merge import slug
-from app.services import (
-    EMAIL_RE, add_tags, get_or_create_message, recompute_contact, steps_of,
-)
+from app.models import Activity, CampaignStep, Enrollment
+from app.services import EMAIL_RE, enroll, get_or_create_message, recompute_enrollment, steps_of
 
 IMPORT_DIR = os.path.join(tempfile.gettempdir(), "outreach_imports")
 MAX_STEP_INDEX = 12
@@ -28,6 +27,8 @@ BASE_TARGETS = [
     ("last_name", "Last name"),
     ("full_name", "Full name (split)"),
     ("company", "Company"),
+    ("job_title", "Job title"),
+    ("company_website", "Company website"),
     ("phone", "Phone"),
     ("priority", "Priority"),
     ("tags", "Tags"),
@@ -164,7 +165,10 @@ def guess_target(header):
         "lastname": "last_name", "last": "last_name", "surname": "last_name", "lname": "last_name",
         "name": "full_name", "fullname": "full_name", "contactname": "full_name",
         "company": "company", "companyname": "company", "business": "company",
-        "organisation": "company", "organization": "company",
+        "organisation": "company", "organization": "company", "account": "company",
+        "title": "job_title", "jobtitle": "job_title", "position": "job_title", "role": "job_title",
+        "website": "company_website", "companywebsite": "company_website", "web": "company_website",
+        "url": "company_website", "domain": "company_website",
         "phone": "phone", "telephone": "phone", "mobile": "phone", "phonenumber": "phone",
         "priority": "priority", "tags": "tags", "tag": "tags",
         "notes": "notes", "note": "notes", "comments": "notes",
@@ -277,7 +281,7 @@ def analyse(session, parsed, campaign, mode="upsert"):
     """Dry run: classify every row without writing."""
     existing = {}
     if campaign is not None and campaign.id:
-        existing = {c.email.lower(): c for c in session.query(Contact).filter(Contact.campaign_id == campaign.id)}
+        existing = {e.email.lower(): e for e in session.query(Enrollment).filter(Enrollment.campaign_id == campaign.id)}
     seen, plan = set(), []
     stats = {"creates": 0, "updates": 0, "skip_existing": 0, "skip_missing": 0, "skip_dnr": 0,
              "dupes_in_file": 0, "customised": 0}
@@ -320,30 +324,36 @@ def apply_plan(session, campaign, plan, settings=None):
     ordered = [steps[k] for k in sorted(steps)]
 
     created = updated = locked = 0
-    for rec, contact in plan:
-        is_new = contact is None
+    actor = audit.Actor("system", label="import")
+    for rec, enrollment in plan:
+        is_new = enrollment is None
+        # The file is the newest information we have: it refreshes whatever it provides.
+        person, _ = people_svc.upsert(
+            session, email=rec["email"], phone=rec.get("phone"), first_name=rec.get("first_name"),
+            last_name=rec.get("last_name"), job_title=rec.get("job_title"), company_name=rec.get("company"),
+            company_website=rec.get("company_website"), source="import", overwrite=True, actor=actor)
         if is_new:
-            contact = Contact(campaign_id=campaign.id, email=rec["email"], stage=0, send_flag=True)
-            session.add(contact)
-        for f in ("company", "first_name", "last_name", "phone", "priority", "notes"):
-            if rec.get(f):
-                setattr(contact, f, rec[f])
+            enrollment, _ = enroll(session, campaign, person, email=rec["email"], steps=ordered)
+        if rec.get("priority"):
+            enrollment.priority = rec["priority"]
         if rec["custom"]:
-            merged = contact.custom_fields
+            merged = enrollment.custom_fields
             merged.update(rec["custom"])
-            contact.custom_fields = merged
+            enrollment.custom_fields = merged
         if rec["send"] == "verify":
-            contact.needs_verification = True
+            enrollment.needs_verification = True
         elif rec["send"] == "skip":
-            contact.send_flag = False
-        if is_new:
-            session.flush()
+            enrollment.send_flag = False
         if rec.get("tags"):
-            add_tags(session, contact, rec["tags"])
+            people_svc.add_tags(session, person, rec["tags"])
+        note = (rec.get("notes") or "").strip()
+        if note and not session.query(Activity).filter(Activity.person_id == person.id, Activity.kind == "note",
+                                                       Activity.body == note).first():
+            activities_svc.log(session, kind="note", subject="Note (import)", body=note, person_id=person.id)
         for idx, data in rec["steps"].items():
             if not (data.get("subject") or data.get("body") or data.get("date")):
                 continue
-            msg = get_or_create_message(session, contact, steps[idx])
+            msg = get_or_create_message(session, enrollment, steps[idx])
             if msg.status == "sent":
                 locked += 1
                 continue
@@ -355,7 +365,7 @@ def apply_plan(session, campaign, plan, settings=None):
                 midnight = datetime.combine(data["date"], datetime.min.time())
                 msg.due_at = app_settings.local_to_utc(midnight, settings) if settings else midnight
         session.flush()
-        recompute_contact(session, contact, ordered, campaign)
+        recompute_enrollment(session, enrollment, ordered, campaign)
         created += is_new
         updated += not is_new
     return created, updated, locked
@@ -363,10 +373,11 @@ def apply_plan(session, campaign, plan, settings=None):
 
 # ------------------------------------------------------------------ export / templates
 
-CORE_COLUMNS = ["email", "first_name", "last_name", "company", "phone", "priority", "send", "tags", "notes"]
+CORE_COLUMNS = ["email", "first_name", "last_name", "job_title", "company", "company_website", "phone", "priority",
+                "send", "tags"]
 
 
-def contact_status_label(c):
+def enrollment_status_label(c):
     if c.bounced:
         return "bounced"
     if c.unsubscribed:
@@ -380,8 +391,9 @@ def contact_status_label(c):
     return "ready" if not c.stage else f"stage {c.stage} sent"
 
 
-def export_csv(session, contacts, steps):
+def export_csv(session, enrollments, steps):
     """Round-trippable export: same column names the importer understands."""
+    contacts = enrollments
     custom_keys = []
     for c in contacts:
         for k in c.custom_fields:
@@ -398,31 +410,35 @@ def export_csv(session, contacts, steps):
     for c in contacts:
         msgs = {m.position: m for m in c.messages}
         send_val = "Verify email first" if c.needs_verification else ("Send" if c.send_flag else "Do not send")
-        row = [c.email, c.first_name, c.last_name, c.company, c.phone, c.priority, send_val,
-               ",".join(sorted(t.name for t in c.tags)), c.notes]
+        p = c.person
+        company = p.company if p else None
+        row = [c.email, c.first_name, c.last_name, p.job_title if p else "", c.company,
+               company.website if company else "", c.phone, c.priority, send_val,
+               ",".join(sorted(t.name for t in c.tags))]
         for i in range(1, n + 1):
             m = msgs.get(i)
             row += [m.subject if m else "", m.body if m else "", m.due_at.date().isoformat() if m and m.due_at else ""]
         row += [c.custom_fields.get(k, "") for k in custom_keys]
-        row += [c.stage or 0, contact_status_label(c)]
+        row += [c.stage or 0, enrollment_status_label(c)]
         w.writerow(row)
     return buf.getvalue()
 
 
 def template_csv(steps):
     n = max(len(steps), 3)
-    cols = ["email", "first_name", "last_name", "company", "phone", "priority", "send", "tags", "notes"]
+    cols = ["email", "first_name", "last_name", "job_title", "company", "company_website", "phone", "priority", "send",
+            "tags", "notes"]
     for i in range(1, n + 1):
         cols += [f"stage{i}_subject", f"stage{i}_body", f"stage{i}_date"]
-    cols += ["website"]
-    sample = ["jane@acmehotel.ie", "Jane", "Doe", "Acme Hotel", "+353 1 000 0000", "High", "Send", "hotels,dublin",
-              "Decision maker"]
+    cols += ["what_we_found"]
+    sample = ["jane@acmehotel.ie", "Jane", "Doe", "General Manager", "Acme Hotel", "https://acmehotel.ie",
+              "+353 1 000 0000", "High", "Send", "hotels,dublin", "Decision maker"]
     for i in range(1, n + 1):
         if i == 1:
             sample += ["Your booking link isn't working", "Hi Jane,\n\nI noticed your booking button...\n\nBest regards,", ""]
         else:
             sample += ["", f"Hi Jane,\n\nFollowing up on my note (stage {i})...\n\nBest regards,", ""]
-    sample += ["https://acmehotel.ie"]
+    sample += ["Booking button on the mobile site is broken"]
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(cols)

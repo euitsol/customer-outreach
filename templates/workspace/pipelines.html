@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, csrf_field %}
+{% block title %}Pipelines{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Deal pipelines and their stages. Probability drives the weighted forecast.</div></div></div>
+{% include "workspace/_tabs.html" %}
+<div class="grid g-side" style="align-items:start">
+  <div class="stack">
+  {% for p in pipelines %}
+    <div class="card">
+      <div class="card-head">
+        <form method="post" class="row grow">{{ csrf_field() }}<input type="hidden" name="action" value="pipeline"><input type="hidden" name="pipeline_id" value="{{ p.id }}">
+          <input type="text" name="name" value="{{ p.name }}" style="max-width:260px;font-weight:650">
+          <label class="check small"><input type="checkbox" name="is_default" value="1" {{ 'checked' if p.is_default }}><span>default</span></label>
+          <button class="btn btn-sm">Save</button></form>
+        <form method="post">{{ csrf_field() }}<input type="hidden" name="action" value="delete_pipeline"><input type="hidden" name="pipeline_id" value="{{ p.id }}"><button class="btn btn-sm btn-danger" data-confirm="Delete the pipeline '{{ p.name }}'?">{{ icon('trash') }}</button></form>
+      </div>
+      <table class="tbl tbl-compact"><thead><tr><th>Stage</th><th>Type</th><th class="num">Win %</th><th class="num">Deals</th><th></th></tr></thead><tbody>
+      {% for st in p.stages %}
+        <tr><td colspan="3"><form method="post" class="row">{{ csrf_field() }}<input type="hidden" name="action" value="stage"><input type="hidden" name="stage_id" value="{{ st.id }}">
+            <input type="text" name="name" value="{{ st.name }}" class="input-sm" style="max-width:220px">{{ pill(st.kind if st.kind != 'open' else 'info', st.kind) }}
+            <input type="number" name="probability" value="{{ st.probability }}" min="0" max="100" class="input-sm inline-num"><button class="btn btn-sm">Save</button></form></td>
+          <td class="num">{{ counts.get(st.id, 0) }}</td>
+          <td class="right"><form method="post" class="row" style="justify-content:flex-end">{{ csrf_field() }}<input type="hidden" name="stage_id" value="{{ st.id }}">
+            <button class="btn btn-ghost btn-sm" name="action" value="stage_up">&uarr;</button><button class="btn btn-ghost btn-sm" name="action" value="stage_down">&darr;</button>
+            <button class="btn btn-ghost btn-sm" name="action" value="delete_stage" data-confirm="Remove the stage '{{ st.name }}'?">&times;</button></form></td></tr>
+      {% endfor %}
+      </tbody></table>
+      <form method="post" class="row card-body">{{ csrf_field() }}<input type="hidden" name="action" value="add_stage"><input type="hidden" name="pipeline_id" value="{{ p.id }}">
+        <input type="text" name="name" placeholder="New stage name" style="max-width:240px" required>
+        <input type="number" name="probability" value="50" min="0" max="100" class="inline-num" title="Win probability %">
+        <button class="btn btn-sm">Add stage</button><span class="small muted">added before Won / Lost</span></form>
+    </div>
+  {% endfor %}
+  </div>
+  <form method="post" class="card card-pad">{{ csrf_field() }}<input type="hidden" name="action" value="create_pipeline">
+    <h2 class="mb2">New pipeline</h2>
+    <label class="field"><span class="lbl">Name</span><input type="text" name="name" placeholder="e.g. Partnerships" required></label>
+    <div class="form-actions"><button class="btn btn-primary">Create</button></div>
+  </form>
+</div>
+{% endblock %}

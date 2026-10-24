@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, pill, pager %}
-{% block title %}Activity log{% endblock %}
+{% block title %}Email activity{% endblock %}
 {% block content %}
 {% set args = request.args %}
 <div class="page-head">
-  <div><h1>Activity log</h1><div class="sub">Every send, open, click, reply, bounce and failure.</div></div>
+  <div><h1>Email activity</h1><div class="sub">Every campaign send, open, click, reply, bounce and failure. Changes to records are in the <a href="{{ url_for('workspace.audit_log') }}">audit log</a>.</div></div>
   <div class="page-actions"><a class="btn" href="{{ url_for('outbox.activity_export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export CSV</a></div>
 </div>
 <div class="card">
   <form class="filters" method="get" data-autosubmit>
-    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email or company"></label>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email address"></label>
     <label class="field"><span class="lbl">Campaign</span>
       <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign')|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
     <label class="field"><span class="lbl">Event</span>
@@ -22,13 +22,13 @@
   </form>
   {% if page.items %}
   <div class="table-wrap"><table class="tbl tbl-compact">
-    <thead><tr><th>When</th><th>Event</th><th>Contact</th><th>Campaign</th><th>Stage</th><th>Detail</th></tr></thead>
+    <thead><tr><th>When</th><th>Event</th><th>Recipient</th><th>Campaign</th><th>Stage</th><th>Detail</th></tr></thead>
     <tbody>
     {% for ev, c, camp in page.items %}
       <tr>
         <td class="nowrap" title="{{ ev.created_at|ago }}">{{ ev.created_at|dt }}</td>
         <td>{{ pill(ev.type) }}</td>
-        <td><a class="primary" href="{{ url_for('contacts.detail', contact_id=c.id) }}">{{ c.email }}</a>{% if c.company %}<div class="sub">{{ c.company }}</div>{% endif %}</td>
+        <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=c.id) }}">{{ c.email }}</a>{% if c.company %}<div class="sub">{{ c.company }}</div>{% endif %}</td>
         <td><a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a></td>
         <td>{{ ev.stage or '' }}</td>
         <td class="small {{ 'muted' if ev.type not in ('failed','bounced') else '' }}" style="max-width:420px;{{ 'color:var(--bad)' if ev.type in ('failed','bounced') }}">{{ (ev.detail or '')|truncate(140) }}</td>

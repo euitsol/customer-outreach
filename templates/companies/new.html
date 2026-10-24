@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import custom_field_inputs %}
+{% block title %}Add company{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('companies.index') }}">Companies</a> / New</div>
+<div class="page-head"><div><h1>Add a company</h1></div></div>
+<form method="post" class="card card-pad" style="max-width:820px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="form-grid">
+    <label class="field"><span class="lbl">Name *</span><input type="text" name="name" value="{{ form.get('name','') }}" required autofocus></label>
+    <label class="field"><span class="lbl">Website</span><input type="text" name="website" value="{{ form.get('website','') }}" placeholder="https://"></label>
+    <label class="field"><span class="lbl">Industry</span><input type="text" name="industry" value="{{ form.get('industry','') }}" placeholder="Hospitality, retail…"></label>
+    <label class="field"><span class="lbl">Size</span><select name="size"><option value="">-</option>{% for s in sizes %}<option value="{{ s }}">{{ s }} employees</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Phone</span><input type="text" name="phone" value="{{ form.get('phone','') }}"></label>
+    <label class="field"><span class="lbl">City</span><input type="text" name="city" value="{{ form.get('city','') }}"></label>
+    <label class="field"><span class="lbl">Country</span><input type="text" name="country" value="{{ form.get('country','') }}"></label>
+    {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner_id"><option value="">Unassigned</option>{% for u in users %}<option value="{{ u.id }}">{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ form.get('tags','') }}" placeholder="comma separated"></label>
+    <label class="field full"><span class="lbl">Description</span><textarea name="description" rows="3">{{ form.get('description','') }}</textarea></label>
+    {{ custom_field_inputs(fields, {}) }}
+  </div>
+  <div class="form-actions"><button class="btn btn-primary">Add company</button><a class="btn btn-ghost" href="{{ url_for('companies.index') }}">Cancel</a></div>
+</form>
+{% endblock %}

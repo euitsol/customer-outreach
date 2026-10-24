@@ -31,6 +31,24 @@ CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", 120))
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 TIMEZONE = os.environ.get("TIMEZONE", "Europe/Dublin")
+# Country assumed for phone numbers written without an international prefix (ISO 3166 code).
+DEFAULT_PHONE_REGION = os.environ.get("DEFAULT_PHONE_REGION", "IE").upper()
+DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "EUR").upper()
+
+# --- WhatsApp Business (Meta Cloud API). Leave empty to disable the channel.
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")   # you choose it; Meta echoes it back
+WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")       # signs webhook payloads
+WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v21.0")
+WHATSAPP_DISPLAY_NUMBER = os.environ.get("WHATSAPP_DISPLAY_NUMBER", "")
+
+# --- MCP server (Claude). The HTTP transport requires an API key created in Settings > API keys.
+MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
+MCP_PORT = int(os.environ.get("MCP_PORT", 8092))
+MCP_ALLOWED_HOSTS = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 
 # Must be stable across restarts / gunicorn workers. Falls back to a value derived
 # from other secrets so sessions keep working without extra configuration.

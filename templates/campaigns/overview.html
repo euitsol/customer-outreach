@@ -7,7 +7,7 @@
 {% if not steps %}
 <div class="banner bad"><b>No emails written yet.</b> <a href="{{ url_for('campaigns.sequence', cid=c.id) }}">Add the first stage</a> before starting.</div>
 {% elif counts.total == 0 %}
-<div class="banner"><b>No contacts yet.</b> <a href="{{ url_for('imports.upload', campaign=c.id) }}">Import a CSV/Excel file</a> or <a href="{{ url_for('contacts.new', campaign=c.id) }}">add one by hand</a>.</div>
+<div class="banner"><b>No contacts yet.</b> <a href="{{ url_for('imports.upload', campaign=c.id) }}">Import a CSV/Excel file</a> or <a href="{{ url_for('enrollments.new', campaign=c.id) }}">add one by hand</a>.</div>
 {% endif %}
 {% if no_content %}
 <div class="banner bad"><b>{{ no_content }} contact{{ 's' if no_content != 1 }} have no email text for stage 1.</b> Write the stage 1 template or import personalised emails, otherwise those sends will fail.</div>
@@ -17,10 +17,10 @@
 {% endif %}
 
 <div class="grid g5 mb2">
-  {{ stat('Contacts', counts.total, counts.ready ~ ' ready to start', href=url_for('contacts.in_campaign', cid=c.id)) }}
+  {{ stat('Contacts', counts.total, counts.ready ~ ' ready to start', href=url_for('enrollments.in_campaign', cid=c.id)) }}
   {{ stat('Emails sent', eng.emails_sent, eng.contacted ~ ' contacted') }}
   {{ stat('Opened', eng.open_rate ~ '%', eng.opened ~ ' contacts · ' ~ eng.total_opens ~ ' opens', 'good' if eng.open_rate >= 40 else '') }}
-  {{ stat('Replied', eng.replied, eng.reply_rate ~ '%', 'good' if eng.replied else '', href=url_for('contacts.in_campaign', cid=c.id, status='replied')) }}
+  {{ stat('Replied', eng.replied, eng.reply_rate ~ '%', 'good' if eng.replied else '', href=url_for('enrollments.in_campaign', cid=c.id, status='replied')) }}
   {{ stat('Failed', eng.failed, 'queued: ' ~ eng.queued, 'bad' if eng.failed else '', href=url_for('outbox.in_campaign', cid=c.id, view='failed' if eng.failed else 'queued')) }}
 </div>
 
@@ -69,7 +69,7 @@
       <div class="card-head"><h2>Contacts by status</h2></div>
       <div class="card-body"><div class="status-split">
         {% for key in ['ready','in_sequence','finished','replied','unsubscribed','bounced','verify','paused'] %}
-        <a href="{{ url_for('contacts.in_campaign', cid=c.id, status=key) }}"><span class="pill {{ key }}">{{ STATUS_LABELS[key] }}</span><b>{{ counts[key] }}</b></a>
+        <a href="{{ url_for('enrollments.in_campaign', cid=c.id, status=key) }}"><span class="pill {{ key }}">{{ STATUS_LABELS[key] }}</span><b>{{ counts[key] }}</b></a>
         {% endfor %}
       </div></div>
     </div>

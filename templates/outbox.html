@@ -38,21 +38,21 @@
     <div class="table-wrap"><table class="tbl">
       <thead><tr>
         {% if view != 'upcoming' %}<th class="check"><input type="checkbox" id="check-all"></th>{% endif %}
-        <th>Contact</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th>
+        <th>Person</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th>
         {% if view == 'upcoming' %}<th>Scheduled</th><th></th>
         {% elif view == 'queued' %}<th>State</th><th>Queued</th>
         {% else %}<th>Error</th><th class="num">Attempts</th><th>Next auto-retry</th>{% endif %}
       </tr></thead>
       <tbody>
-      {% for r in rows %}{% set ct = r.contact %}
+      {% for r in rows %}{% set ct = r.enrollment %}
         <tr>
           {% if view != 'upcoming' %}<td class="check"><input type="checkbox" class="row-check" name="ids" value="{{ r.msg.id }}"></td>{% endif %}
-          <td><a class="primary" href="{{ url_for('contacts.detail', contact_id=ct.id) }}">{{ ct.email }}</a><div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
+          <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}">{{ ct.email }}</a><div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
           {% if not scoped %}<td>{{ r.camp.name }}</td>{% endif %}
           <td class="nowrap">{% if r.step %}{{ r.step.position }}. {{ r.step.name }}{% endif %}</td>
           {% if view == 'upcoming' %}
             <td class="nowrap">{{ pill('due' if (not r.due or r.due <= now) else 'scheduled', 'Now' if not r.due else (r.due|dt)) }} <span class="muted small">{{ r.due|when if r.due and r.due > now }}</span></td>
-            <td class="right"><a class="btn btn-sm" href="{{ url_for('contacts.detail', contact_id=ct.id) }}#stage-{{ r.step.position if r.step else 1 }}">Edit</a></td>
+            <td class="right"><a class="btn btn-sm" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}#stage-{{ r.step.position if r.step else 1 }}">Edit</a></td>
           {% elif view == 'queued' %}
             <td>{{ pill(r.msg.status) }}</td><td class="muted">{{ r.msg.updated_at|ago }}</td>
           {% else %}

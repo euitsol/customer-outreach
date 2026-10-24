@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, avatar, csrf_field %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">People who can sign in to this CRM.</div></div></div>
+{% include "workspace/_tabs.html" %}
+<div class="grid g-side" style="align-items:start">
+  <div class="card">
+    {% if env_admin %}<div class="card-body small muted" style="border-bottom:1px solid var(--border)">The administrator login from the server's <code>.env</code> (<b>{{ env_user }}</b>) keeps working alongside these users.</div>{% endif %}
+    {% if rows %}
+    <table class="tbl"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+    {% for u in rows %}
+      <tr><td><div class="who">{{ avatar(u.label, 'sm') }}<div><b>{{ u.label }}</b><div class="sub">{{ u.email }}</div></div></div></td>
+        <td>{{ u.role|capitalize }}</td><td>{{ pill('active' if u.is_active else 'archived', 'Active' if u.is_active else 'Disabled') }}</td>
+        <td class="small muted">{{ u.last_login_at|ago if u.last_login_at else 'never' }}</td>
+        <td class="right"><button class="btn btn-sm" data-dialog="u{{ u.id }}">Edit</button>
+          <dialog id="u{{ u.id }}"><div class="dlg-head"><h2>{{ u.email }}</h2><button class="btn btn-ghost btn-sm" data-close>&times;</button></div>
+            <div class="dlg-body stack">
+              <form method="post" class="stack">{{ csrf_field() }}<input type="hidden" name="action" value="update"><input type="hidden" name="user_id" value="{{ u.id }}">
+                <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ u.name or '' }}"></label>
+                <label class="field"><span class="lbl">Role</span><select name="role">{% for k, label in roles %}<option value="{{ k }}" {{ 'selected' if u.role == k }}>{{ label }}</option>{% endfor %}</select></label>
+                <label class="check"><input type="checkbox" name="is_active" value="1" {{ 'checked' if u.is_active }}><span>Can sign in</span></label>
+                <div><button class="btn btn-primary btn-sm">Save</button></div></form>
+              <form method="post" class="row">{{ csrf_field() }}<input type="hidden" name="action" value="password"><input type="hidden" name="user_id" value="{{ u.id }}">
+                <input type="password" name="password" placeholder="New password (10+ characters)" style="flex:1" autocomplete="new-password"><button class="btn btn-sm">Set password</button></form>
+              <form method="post">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="btn btn-sm btn-danger" data-confirm="Remove {{ u.email }}?">Remove user</button></form>
+            </div></dialog></td></tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}<div class="empty"><h3>No users yet</h3><p>Add yourself first: the first user becomes the owner. Each user then signs in with their own email and password, and records can be assigned to them.</p></div>{% endif %}
+  </div>
+  <form method="post" class="card card-pad">{{ csrf_field() }}<input type="hidden" name="action" value="create">
+    <h2 class="mb2">Add a user</h2>
+    <div class="stack">
+      <label class="field"><span class="lbl">Email</span><input type="email" name="email" required></label>
+      <label class="field"><span class="lbl">Name</span><input type="text" name="name"></label>
+      <label class="field"><span class="lbl">Role</span><select name="role">{% for k, label in roles %}<option value="{{ k }}" {{ 'selected' if k == 'member' }}>{{ label }}</option>{% endfor %}</select>
+        <div class="hint">Owners and admins manage users, keys, fields and pipelines.</div></label>
+      <label class="field"><span class="lbl">Password</span><input type="password" name="password" minlength="10" required autocomplete="new-password"></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Add user</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,16 +1,15 @@
 import random
 import time
 import traceback
-from datetime import datetime
-from app.clock import utcnow
 
 from sqlalchemy import and_, case, exists, func, or_, select
 
 from app import settings as app_settings
+from app.clock import utcnow
 from app.db import SessionLocal, init_db
-from app.models import Campaign, CampaignStep, Contact, Event, Message
+from app.models import Campaign, CampaignStep, Enrollment, Event, Message
 from app.sender import send_stage
-from app.services import not_suppressed, steps_of
+from app.services import email_consent_ok, not_suppressed, sendable, steps_of
 
 
 def status_text(session, text):
@@ -23,16 +22,16 @@ def sent_today(session, s, campaign_id=None):
     q = session.query(func.count(Event.id)).filter(
         Event.type == "sent", Event.created_at >= app_settings.local_midnight_utc(s))
     if campaign_id:
-        q = q.join(Contact, Contact.id == Event.contact_id).filter(Contact.campaign_id == campaign_id)
+        q = q.join(Enrollment, Enrollment.id == Event.enrollment_id).filter(Enrollment.campaign_id == campaign_id)
     return q.scalar() or 0
 
 
 def pick_manual(session):
     """A message the user asked to send right now (send-now / retry / resend)."""
-    q = (session.query(Message).join(Contact, Message.contact_id == Contact.id)
+    q = (session.query(Message).join(Enrollment, Message.enrollment_id == Enrollment.id)
          .filter(Message.queued == True,  # noqa: E712
-                 Contact.bounced == False, Contact.unsubscribed == False,  # noqa: E712
-                 not_suppressed())
+                 Enrollment.bounced == False, Enrollment.unsubscribed == False,  # noqa: E712
+                 not_suppressed(), email_consent_ok())
          .order_by(Message.id))
     return q.first()
 
@@ -46,32 +45,29 @@ def capped_campaigns(session, s):
 
 
 def pick_auto(session, s, now):
-    """The next contact whose follow-up (or first email) is due in an active campaign."""
+    """The next enrollment whose follow-up (or first email) is due in an active campaign."""
     nsteps = (select(func.count(CampaignStep.id))
-              .where(CampaignStep.campaign_id == Contact.campaign_id).correlate(Contact).scalar_subquery())
+              .where(CampaignStep.campaign_id == Enrollment.campaign_id).correlate(Enrollment).scalar_subquery())
     blocked_msg = exists().where(and_(
-        Message.contact_id == Contact.id,
-        Message.position == Contact.stage + 1,
+        Message.enrollment_id == Enrollment.id,
+        Message.position == Enrollment.stage + 1,
         Message.status == "failed",
         or_(Message.attempts >= s["retry_max"], Message.next_attempt_at > now),
     ))
     priority = case(
-        (func.lower(Contact.priority) == "high", 0),
-        (func.lower(Contact.priority).in_(("medium", "med")), 1),
+        (func.lower(Enrollment.priority) == "high", 0),
+        (func.lower(Enrollment.priority).in_(("medium", "med")), 1),
         else_=2)
-    q = (session.query(Contact).join(Campaign, Contact.campaign_id == Campaign.id)
-         .filter(Campaign.status == "active",
-                 Contact.send_flag == True, Contact.unsubscribed == False,  # noqa: E712
-                 Contact.replied == False, Contact.bounced == False,  # noqa: E712
-                 Contact.needs_verification == False,  # noqa: E712
-                 Contact.stage < nsteps,
-                 or_(Contact.next_due_at.is_(None), Contact.next_due_at <= now),
+    q = (session.query(Enrollment).join(Campaign, Enrollment.campaign_id == Campaign.id)
+         .filter(Campaign.status == "active", sendable(),
+                 Enrollment.stage < nsteps,
+                 or_(Enrollment.next_due_at.is_(None), Enrollment.next_due_at <= now),
                  or_(Campaign.start_at.is_(None), Campaign.start_at <= now),
-                 not_suppressed(), ~blocked_msg))
+                 not_suppressed(), email_consent_ok(), ~blocked_msg))
     capped = capped_campaigns(session, s)
     if capped:
-        q = q.filter(Contact.campaign_id.notin_(capped))
-    return q.order_by(priority, Contact.next_due_at.asc(), Contact.id).first()
+        q = q.filter(Enrollment.campaign_id.notin_(capped))
+    return q.order_by(priority, Enrollment.next_due_at.asc(), Enrollment.id).first()
 
 
 def _delay_for(campaign, s):
@@ -116,23 +112,24 @@ def run_cycle(session):
             return
 
         message = pick_manual(session)
-        contact = step = None
+        enrollment = step = None
         if message:
-            contact, step = message.contact, message.step
+            enrollment, step = message.enrollment, message.step
         else:
-            contact = pick_auto(session, s, now)
-            if contact:
-                steps = steps_of(session, contact.campaign_id)
-                step = next((x for x in steps if x.position == (contact.stage or 0) + 1), None)
-        if not contact or not step:
+            enrollment = pick_auto(session, s, now)
+            if enrollment:
+                steps = steps_of(session, enrollment.campaign_id)
+                step = next((x for x in steps if x.position == (enrollment.stage or 0) + 1), None)
+        if not enrollment or not step:
             status_text(session, "Idle: nothing due right now")
             return
 
-        camp = contact.campaign
-        steps = steps_of(session, contact.campaign_id)
-        outcome, err = send_stage(session, contact, step, s=s, campaign=camp, steps=steps, message=message, now=now)
+        camp = enrollment.campaign
+        steps = steps_of(session, enrollment.campaign_id)
+        outcome, err = send_stage(session, enrollment, step, s=s, campaign=camp, steps=steps, message=message,
+                                  now=now)
         session.commit()
-        label = f"[{camp.name} / stage {step.position}] {contact.email}"
+        label = f"[{camp.name} / stage {step.position}] {enrollment.email}"
         if outcome == "sent":
             print(f"sent   {label}", flush=True)
         elif outcome == "failed":
@@ -142,7 +139,7 @@ def run_cycle(session):
             status_text(session, f"SMTP problem: {err}")
             _sleep(300, session)
             return
-        status_text(session, f"Last: {outcome} -> {contact.email}")
+        status_text(session, f"Last: {outcome} -> {enrollment.email}")
         _sleep(_delay_for(camp, s), session)
 
 

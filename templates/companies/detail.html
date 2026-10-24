@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, avatar, csrf_field, custom_field_inputs, custom_field_values, task_row %}
+{% block title %}{{ c.name }}{% endblock %}
+{% block content %}
+{% set here = url_for('companies.detail', company_id=c.id) %}
+<div class="crumbs"><a href="{{ url_for('companies.index') }}">Companies</a> / {{ c.name }}</div>
+<div class="page-head">
+  <div class="profile-head">{{ avatar(c.name, 'lg') }}
+    <div><h1>{{ c.name }}</h1>
+      <div class="facts">
+        {% if c.website %}<a href="{{ c.website }}" target="_blank" rel="noopener">{{ icon('link') }}{{ c.domain or c.website }}</a>{% elif c.domain %}<span>{{ c.domain }}</span>{% endif %}
+        {% if c.industry %}<span>{{ c.industry }}</span>{% endif %}
+        {% if c.size %}<span>{{ c.size }} employees</span>{% endif %}
+        {% if c.city or c.country %}<span>{{ [c.city, c.country]|select|join(', ') }}</span>{% endif %}
+        {% if c.phone %}<a href="tel:{{ c.phone }}">{{ icon('phone') }}{{ c.phone }}</a>{% endif %}
+        {% if c.owner %}<span>{{ icon('person') }}{{ c.owner.label }}</span>{% endif %}
+      </div></div></div>
+  <div class="page-actions">
+    <a class="btn" href="{{ url_for('people.new', company=c.id) }}">{{ icon('person') }} Add person</a>
+    <a class="btn" href="{{ url_for('deals.new', company_id=c.id) }}">{{ icon('deal') }} New deal</a>
+    <form method="post" action="{{ url_for('companies.delete', company_id=c.id) }}">{{ csrf_field() }}<button class="btn btn-danger" data-confirm="Delete {{ c.name }}? Its people are kept; its deals lose the company link.">{{ icon('trash') }}</button></form>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:minmax(0,1.7fr) minmax(310px,1fr);align-items:start">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>People <span class="muted small">({{ people|length }})</span></h2></div>
+      {% if people %}
+      <table class="tbl tbl-compact"><tbody>
+      {% for p in people %}
+        <tr><td><div class="who">{{ avatar(p.display_name, 'sm') }}<div><a class="primary" href="{{ url_for('people.detail', person_id=p.id) }}">{{ p.display_name }}</a><div class="sub">{{ p.job_title or '' }}</div></div></div></td>
+          <td class="small">{{ p.email or '' }}</td><td>{{ pill(p.lifecycle_stage) }}</td>
+          <td class="right"><form method="post" action="{{ url_for('companies.attach_people', company_id=c.id) }}">{{ csrf_field() }}<input type="hidden" name="person_id" value="{{ p.id }}"><button class="btn btn-ghost btn-sm" name="action" value="detach" title="Remove from company">&times;</button></form></td></tr>
+      {% endfor %}
+      </tbody></table>
+      {% else %}<div class="card-body muted small">Nobody yet.</div>{% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Deals</h2><a class="btn btn-sm" href="{{ url_for('deals.new', company_id=c.id) }}">{{ icon('plus') }} New</a></div>
+      {% if deals %}
+      <table class="tbl tbl-compact"><tbody>
+      {% for d in deals %}<tr><td><a class="primary" href="{{ url_for('deals.detail', deal_id=d.id) }}">{{ d.title }}</a></td><td>{{ d.stage.name }}</td><td class="num">{{ d.amount|money(d.currency) }}</td><td>{{ pill(d.status) }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% else %}<div class="card-body muted small">No deals yet.</div>{% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Notes &amp; activity</h2><span class="small muted">including everyone at {{ c.name }}</span></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('companies.log_activity', company_id=c.id) }}" class="stack mb2">{{ csrf_field() }}
+          <div class="row"><select name="kind" style="max-width:150px">{% for k, label in activity_kinds %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select><input type="text" name="subject" placeholder="Summary" style="flex:1"></div>
+          <textarea name="body" rows="2" placeholder="Notes"></textarea>
+          <div><button class="btn btn-sm btn-primary">Save</button></div>
+        </form>
+        <ul class="feed">
+        {% for a in activities %}
+          <li><span class="mark {{ a.kind }}">{{ icon('note' if a.kind == 'note' else ('phone' if a.kind == 'call' else 'calendar')) }}</span>
+            <div><div class="head"><b>{{ a.subject or a.kind|capitalize }}</b>{% if a.person %}<a class="small" href="{{ url_for('people.detail', person_id=a.person.id) }}">{{ a.person.display_name }}</a>{% endif %}<time>{{ a.occurred_at|ago }}</time></div>
+              {% if a.body %}<div class="text">{{ a.body|truncate(800) }}</div>{% endif %}</div></li>
+        {% else %}<li style="display:block" class="muted small">Nothing logged yet.</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <form method="post" action="{{ url_for('companies.edit', company_id=c.id) }}" class="card card-pad">
+      {{ csrf_field() }}
+      <details class="fold"><summary><h2 style="display:inline">Details</h2></summary>
+        <div class="stack mt1">
+          <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ c.name }}" required></label>
+          <div class="row"><label class="field grow"><span class="lbl">Website</span><input type="text" name="website" value="{{ c.website or '' }}"></label>
+            <label class="field grow"><span class="lbl">Domain</span><input type="text" name="domain" value="{{ c.domain or '' }}"></label></div>
+          <div class="row"><label class="field grow"><span class="lbl">Industry</span><input type="text" name="industry" value="{{ c.industry or '' }}"></label>
+            <label class="field grow"><span class="lbl">Size</span><select name="size"><option value="">-</option>{% for s in sizes %}<option value="{{ s }}" {{ 'selected' if c.size == s }}>{{ s }}</option>{% endfor %}</select></label></div>
+          <div class="row"><label class="field grow"><span class="lbl">City</span><input type="text" name="city" value="{{ c.city or '' }}"></label>
+            <label class="field grow"><span class="lbl">Country</span><input type="text" name="country" value="{{ c.country or '' }}"></label></div>
+          <label class="field"><span class="lbl">Phone</span><input type="text" name="phone" value="{{ c.phone or '' }}"></label>
+          <label class="field"><span class="lbl">Address</span><textarea name="address" rows="2">{{ c.address or '' }}</textarea></label>
+          <label class="field"><span class="lbl">Description</span><textarea name="description" rows="3">{{ c.description or '' }}</textarea></label>
+          {% if users %}<label class="field"><span class="lbl">Owner</span><select name="owner_id"><option value="">Unassigned</option>{% for u in users %}<option value="{{ u.id }}" {{ 'selected' if c.owner_id == u.id }}>{{ u.label }}</option>{% endfor %}</select></label>{% endif %}
+          <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ tags }}"></label>
+          <div class="form-grid" style="grid-template-columns:1fr">{{ custom_field_inputs(fields, c.attributes) }}</div>
+          <div><button class="btn btn-primary btn-sm">Save</button></div>
+        </div>
+      </details>
+      {% if c.description %}<p class="small mt1">{{ c.description }}</p>{% endif %}
+      {% if fields %}<dl class="kv mt1">{{ custom_field_values(fields, c.attributes) }}</dl>{% endif %}
+      {% if c.tags %}<div class="mt1">{% for t in c.tags %}<span class="tag">{{ t.name }}</span>{% endfor %}</div>{% endif %}
+    </form>
+
+    <div class="card card-pad">
+      <div class="section-title"><h2>Tasks</h2></div>
+      {% if tasks %}<ul class="task-list">{% for t in tasks %}{{ task_row(t, now, here) }}{% endfor %}</ul>{% else %}<p class="small muted">No open tasks.</p>{% endif %}
+      <form method="post" action="{{ url_for('tasks.new') }}" class="stack mt1">{{ csrf_field() }}
+        <input type="hidden" name="company_id" value="{{ c.id }}"><input type="hidden" name="next" value="{{ here }}">
+        <input type="text" name="title" placeholder="Next step for this account" required>
+        <div class="row"><input type="datetime-local" name="due_at" style="max-width:210px"><button class="btn btn-sm">Add task</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

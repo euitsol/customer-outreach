@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, avatar, csrf_field %}
+{% block title %}Merge {{ keep.display_name }}{% endblock %}
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('people.index') }}">People</a> / <a href="{{ url_for('people.detail', person_id=keep.id) }}">{{ keep.display_name }}</a> / Merge</div>
+<div class="page-head"><div><h1>Merge duplicate people</h1>
+  <div class="sub">Every email, phone, campaign, note, task, conversation, deal and tag moves to the record you keep; the other one is deleted. Where both are in the same campaign, the enrollment that got further is kept.</div></div></div>
+
+{% if other %}
+<form method="post" class="card card-pad" style="max-width:900px">
+  {{ csrf_field() }}<input type="hidden" name="other" value="{{ other.id }}">
+  <div class="grid g2">
+    {% for r, label in [(keep, 'Keep this record'), (other, 'Fold into it')] %}
+    <div class="card card-pad">
+      <div class="who mb1">{{ avatar(r.display_name) }}<div><b>{{ r.display_name }}</b><div class="small muted">#{{ r.id }} · added {{ r.created_at|day }}</div></div></div>
+      <dl class="kv">
+        <dt>Email</dt><dd>{{ r.email or '-' }}</dd><dt>Phone</dt><dd>{{ r.phone or '-' }}</dd>
+        <dt>Company</dt><dd>{{ r.company.name if r.company else '-' }}</dd><dt>Job title</dt><dd>{{ r.job_title or '-' }}</dd>
+        <dt>Campaigns</dt><dd>{{ r.enrollments|length }}</dd><dt>Lifecycle</dt><dd>{{ pill(r.lifecycle_stage) }}</dd>
+      </dl>
+      <p class="small muted mt1">{{ label }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" data-confirm="Merge these two people? This can't be undone.">{{ icon('merge') }} Merge, keep the left record</button>
+    <button class="btn" name="swap" value="1" data-confirm="Merge these two people? This can't be undone.">Merge, keep the right record</button>
+    <a class="btn btn-ghost" href="{{ url_for('people.detail', person_id=keep.id) }}">Cancel</a>
+  </div>
+</form>
+{% else %}
+<div class="card" style="max-width:900px">
+  <div class="card-head"><h2>Possible duplicates of {{ keep.display_name }}</h2></div>
+  {% if candidates %}
+  <table class="tbl"><tbody>
+  {% for c in candidates %}
+    <tr><td><div class="who">{{ avatar(c.display_name, 'sm') }}<div><a class="primary" href="{{ url_for('people.detail', person_id=c.id) }}">{{ c.display_name }}</a><div class="sub">{{ c.email or c.phone or '' }}</div></div></div></td>
+      <td>{{ c.company.name if c.company else '' }}</td>
+      <td class="right"><a class="btn btn-sm" href="{{ url_for('people.merge', person_id=keep.id, other=c.id) }}">Compare &amp; merge</a></td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty"><h3>No likely duplicates</h3><p>Same email domain, last name, phone or company finds nothing. Select two people on the People page and choose Merge.</p></div>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, csrf_field %}
+{% block title %}Custom fields{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Extra fields on people, companies and deals. They appear on forms, in exports, in the API and as merge fields (<code>{{ '{{field_key}}' }}</code>) in campaign emails.</div></div></div>
+{% include "workspace/_tabs.html" %}
+<div class="grid g-side" style="align-items:start">
+  <div class="stack">
+    {% for entity, label, defs in groups %}
+    <div class="card">
+      <div class="card-head"><h2>{{ label }}</h2><span class="small muted">{{ defs|length }} field{{ 's' if defs|length != 1 }}</span></div>
+      {% if defs %}
+      <table class="tbl tbl-compact"><thead><tr><th>Label</th><th>Key</th><th>Type</th><th></th></tr></thead><tbody>
+      {% for f in defs %}
+        <tr><td><b>{{ f.label }}</b>{% if f.is_required %} <span class="pill warn nodot">required</span>{% endif %}{% if f.options %}<div class="sub">{{ f.options|join(', ')|truncate(80) }}</div>{% endif %}</td>
+          <td><code>{{ f.key }}</code></td><td>{{ dict(types)[f.field_type] }}</td>
+          <td class="right"><form method="post" class="row" style="justify-content:flex-end">{{ csrf_field() }}<input type="hidden" name="field_id" value="{{ f.id }}">
+            <button class="btn btn-ghost btn-sm" name="action" value="up" title="Move up">&uarr;</button><button class="btn btn-ghost btn-sm" name="action" value="down" title="Move down">&darr;</button>
+            <button class="btn btn-sm" type="button" data-dialog="f{{ f.id }}">Edit</button>
+            <button class="btn btn-sm btn-danger" name="action" value="delete" data-confirm="Remove the field '{{ f.label }}'?">{{ icon('trash') }}</button></form>
+            <dialog id="f{{ f.id }}"><div class="dlg-head"><h2>{{ f.label }}</h2><button class="btn btn-ghost btn-sm" data-close>&times;</button></div>
+              <form method="post" class="dlg-body stack">{{ csrf_field() }}<input type="hidden" name="action" value="update"><input type="hidden" name="field_id" value="{{ f.id }}">
+                <label class="field"><span class="lbl">Label</span><input type="text" name="label" value="{{ f.label }}"></label>
+                {% if f.field_type in ('select','multiselect') %}<label class="field"><span class="lbl">Options (one per line)</span><textarea name="options" rows="5">{{ (f.options or [])|join('\n') }}</textarea></label>{% endif %}
+                <label class="check"><input type="checkbox" name="is_required" value="1" {{ 'checked' if f.is_required }}><span>Required</span></label>
+                <div><button class="btn btn-primary btn-sm">Save</button></div></form></dialog></td></tr>
+      {% endfor %}
+      </tbody></table>
+      {% else %}<div class="card-body small muted">No custom fields.</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <form method="post" class="card card-pad">{{ csrf_field() }}<input type="hidden" name="action" value="create">
+    <h2 class="mb2">Add a field</h2>
+    <div class="stack">
+      <label class="field"><span class="lbl">On</span><select name="entity">{% for entity, label, defs in groups %}<option value="{{ entity }}">{{ label }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="lbl">Label</span><input type="text" name="label" placeholder="e.g. Rooms, Booking engine, Budget" required></label>
+      <label class="field"><span class="lbl">Type</span><select name="field_type">{% for k, label in types %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></label>
+      <label class="field"><span class="lbl">Options <span class="faint">(dropdown / multiple choice, one per line)</span></span><textarea name="options" rows="4"></textarea></label>
+      <label class="check"><input type="checkbox" name="is_required" value="1"><span>Required</span></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary">Add field</button></div>
+  </form>
+</div>
+{% endblock %}

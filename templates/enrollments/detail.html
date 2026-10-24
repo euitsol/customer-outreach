@@ -2,23 +2,25 @@
 {% from "_macros.html" import icon, pill %}
 {% block title %}{{ c.email }}{% endblock %}
 {% block content %}
-<div class="crumbs"><a href="{{ url_for('contacts.index') }}">Contacts</a> / <a href="{{ url_for('contacts.in_campaign', cid=camp.id) }}">{{ camp.name }}</a> / {{ c.email }}</div>
+<div class="crumbs"><a href="{{ url_for('campaigns.index') }}">Campaigns</a> / <a href="{{ url_for('enrollments.in_campaign', cid=camp.id) }}">{{ camp.name }}</a> / {{ c.email }}</div>
 <div class="page-head">
   <div>
     <h1>{{ c.full_name or c.email }} {{ pill(status) }}</h1>
-    <div class="sub">{{ c.email }}{% if c.company %} · {{ c.company }}{% endif %} · in <a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a> ({{ pill(camp.status) }})</div>
+    <div class="sub">{{ c.email }}{% if c.company %} · {{ c.company }}{% endif %} · in <a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a> ({{ pill(camp.status) }})
+      · <a href="{{ url_for('people.detail', person_id=c.person_id) }}">{{ icon('person') }} Open person record</a></div>
   </div>
   <div class="page-actions">
-    <form method="post" action="{{ url_for('contacts.reset', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" data-confirm="Restart this contact's sequence from stage 1? They will be emailed from the beginning.">{{ icon('refresh') }} Restart sequence</button></form>
-    <form method="post" action="{{ url_for('contacts.delete', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-danger" data-confirm="Delete this contact and all their history?">{{ icon('trash') }} Delete</button></form>
+    <form method="post" action="{{ url_for('enrollments.reset', enrollment_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn" data-confirm="Restart this sequence from stage 1? They will be emailed from the beginning.">{{ icon('refresh') }} Restart sequence</button></form>
+    <form method="post" action="{{ url_for('enrollments.delete', enrollment_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-danger" data-confirm="Remove from this campaign? Sequence history for this campaign is deleted; the person stays in your CRM.">{{ icon('trash') }} Remove from campaign</button></form>
   </div>
 </div>
+{% if others %}<div class="banner" style="background:var(--info-soft);color:var(--info);border-color:transparent">Also in: {% for o in others %}<a href="{{ url_for('enrollments.detail', enrollment_id=o.id) }}">{{ o.campaign.name }}</a> (stage {{ o.stage or 0 }}){{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
 
 {% if status in ('bounced','unsubscribed','replied','verify','paused') %}
 <div class="banner">
-  {% if status == 'bounced' %}This address <b>bounced</b>; no more emails will be sent. {% elif status == 'unsubscribed' %}This contact <b>unsubscribed</b>; no more emails will be sent. {% elif status == 'replied' %}This contact <b>replied</b>, so the automatic sequence stopped. {% elif status == 'verify' %}This address is flagged <b>needs verification</b>, so it's skipped until you clear the flag. {% else %}Sending is <b>paused</b> for this contact. {% endif %}
+  {% if status == 'bounced' %}This address <b>bounced</b>; no more emails will be sent. {% elif status == 'unsubscribed' %}This person <b>unsubscribed</b>; no more emails will be sent. {% elif status == 'replied' %}This person <b>replied</b>, so the automatic sequence stopped. <a href="{{ url_for('inbox.index', q=c.email) }}">See the conversation</a>. {% elif status == 'verify' %}This address is flagged <b>needs verification</b>, so it's skipped until you clear the flag. {% else %}Sending is <b>paused</b> for this enrollment. {% endif %}
   {% if status in ('bounced','unsubscribed','replied') %}
-  <form method="post" action="{{ url_for('contacts.flag', contact_id=c.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ status if status != 'unsubscribed' else 'unsubscribed' }}"><input type="hidden" name="value" value="0"><button class="btn btn-sm">Clear {{ status }} flag</button></form>
+  <form method="post" action="{{ url_for('enrollments.flag', enrollment_id=c.id) }}" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ status if status != 'unsubscribed' else 'unsubscribed' }}"><input type="hidden" name="value" value="0"><button class="btn btn-sm">Clear {{ status }} flag</button></form>
   {% endif %}
 </div>
 {% endif %}
@@ -50,10 +52,10 @@
           <div class="preview"><div class="subj">{{ m.sent_subject or r.subject }}</div>{{ m.sent_body or r.body }}</div>
           <div class="row mt2">
             <a class="btn btn-sm" href="{{ url_for('outbox.message_view', mid=m.id) }}">Open sent copy</a>
-            <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="resend"><button class="btn btn-sm" data-confirm="Send this email to {{ c.email }} again?">Send again</button></form>
+            <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="resend"><button class="btn btn-sm" data-confirm="Send this email to {{ c.email }} again?">Send again</button></form>
           </div>
         {% else %}
-          <form method="post" action="{{ url_for('contacts.stage_save', contact_id=c.id, step_id=st.id) }}">
+          <form method="post" action="{{ url_for('enrollments.stage_save', enrollment_id=c.id, step_id=st.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-grid">
               <label class="field full"><span class="lbl">Subject for this person <span class="faint">(blank = {{ 'campaign subject' if st.position == 1 or st.subject else 'reply in the same thread' }})</span></span>
@@ -72,15 +74,15 @@
           <div class="preview mt1"><div class="subj">{{ r.subject or '(no subject)' }}</div>{{ r.body or '(empty - write a body or fill the campaign template)' }}</div>
           <div class="row mt2">
             {% if r.state == 'queued' %}
-              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-sm">Cancel queued send</button></form>
+              <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-sm">Cancel queued send</button></form>
             {% elif r.state == 'skipped' %}
-              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reopen"><button class="btn btn-sm">Re-open stage</button></form>
+              <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reopen"><button class="btn btn-sm">Re-open stage</button></form>
             {% else %}
-              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="{{ 'retry' if r.state == 'failed' else 'send_now' }}"><button class="btn btn-sm btn-primary" data-confirm="Send stage {{ st.position }} to {{ c.email }} now (skips the wait; still paced by your delay and daily limit)?">{{ icon('send') }} {{ 'Retry now' if r.state == 'failed' else 'Send now' }}</button></form>
-              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="skip"><button class="btn btn-sm" data-confirm="Skip stage {{ st.position }} for this contact?">Skip stage</button></form>
+              <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="{{ 'retry' if r.state == 'failed' else 'send_now' }}"><button class="btn btn-sm btn-primary" data-confirm="Send stage {{ st.position }} to {{ c.email }} now (skips the wait; still paced by your delay and daily limit)?">{{ icon('send') }} {{ 'Retry now' if r.state == 'failed' else 'Send now' }}</button></form>
+              <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="skip"><button class="btn btn-sm" data-confirm="Skip stage {{ st.position }} for this contact?">Skip stage</button></form>
             {% endif %}
             {% if r.custom or (m and m.due_at) %}
-              <form method="post" action="{{ url_for('contacts.stage_action', contact_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="clear_custom"><button class="btn btn-sm btn-ghost">Clear custom text &amp; date</button></form>
+              <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="clear_custom"><button class="btn btn-sm btn-ghost">Clear custom text &amp; date</button></form>
             {% endif %}
           </div>
         {% endif %}
@@ -92,20 +94,20 @@
   </div>
 
   <div class="stack">
-    <form method="post" action="{{ url_for('contacts.edit', contact_id=c.id) }}" class="card card-pad">
+    <form method="post" action="{{ url_for('enrollments.edit', enrollment_id=c.id) }}" class="card card-pad">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <h2 class="mb2">Profile</h2>
+      <h2 class="mb2">In this campaign</h2>
       <div class="stack">
-        <label class="field"><span class="lbl">Email</span><input type="email" name="email" value="{{ c.email }}" required></label>
+        <label class="field"><span class="lbl">Send to</span><input type="email" name="email" value="{{ c.email }}" required></label>
         <div class="row"><label class="field grow"><span class="lbl">First name</span><input type="text" name="first_name" value="{{ c.first_name or '' }}"></label>
           <label class="field grow"><span class="lbl">Last name</span><input type="text" name="last_name" value="{{ c.last_name or '' }}"></label></div>
-        <label class="field"><span class="lbl">Company</span><input type="text" name="company" value="{{ c.company or '' }}"></label>
+        <div class="row"><label class="field grow"><span class="lbl">Company</span><input type="text" name="company" value="{{ c.company or '' }}"></label>
+          <label class="field grow"><span class="lbl">Job title</span><input type="text" name="job_title" value="{{ person.job_title or '' }}"></label></div>
         <div class="row"><label class="field grow"><span class="lbl">Phone</span><input type="text" name="phone" value="{{ c.phone or '' }}"></label>
           <label class="field grow"><span class="lbl">Priority</span><input type="text" name="priority" value="{{ c.priority or '' }}"></label></div>
-        <label class="field"><span class="lbl">Tags</span><input type="text" name="tags" value="{{ tags }}" placeholder="comma separated"></label>
-        <label class="field"><span class="lbl">Notes</span><textarea name="notes" rows="3">{{ c.notes or '' }}</textarea></label>
-        <label class="field"><span class="lbl">Merge fields</span><textarea name="custom" rows="4" placeholder="website: https://...">{{ custom_text }}</textarea><div class="hint">Use as <code>{{ '{{name}}' }}</code> in emails.</div></label>
-        <label class="check"><input type="checkbox" name="send_flag" value="1" {{ 'checked' if c.send_flag }}><span>Sending enabled <div class="hint">Untick to pause just this contact.</div></span></label>
+        <label class="field"><span class="lbl">Tags <span class="faint">(on the person)</span></span><input type="text" name="tags" value="{{ tags }}" placeholder="comma separated"></label>
+        <label class="field"><span class="lbl">Campaign merge fields</span><textarea name="custom" rows="4" placeholder="what_we_found: ...">{{ custom_text }}</textarea><div class="hint">Use as <code>{{ '{{name}}' }}</code> in this campaign's emails. Name, company and person/company custom fields are available automatically.</div></label>
+        <label class="check"><input type="checkbox" name="send_flag" value="1" {{ 'checked' if c.send_flag }}><span>Sending enabled <div class="hint">Untick to pause just this enrollment.</div></span></label>
         <label class="check"><input type="checkbox" name="needs_verification" value="1" {{ 'checked' if c.needs_verification }}><span>Needs email verification <div class="hint">Blocks sending until cleared.</div></span></label>
       </div>
       <div class="form-actions"><button class="btn btn-primary">Save profile</button></div>
@@ -115,7 +117,7 @@
       <h2 class="mb1">Status flags</h2>
       <div class="row">
         {% for name, label in [('replied','Replied'),('unsubscribed','Unsubscribed'),('bounced','Bounced')] %}
-        <form method="post" action="{{ url_for('contacts.flag', contact_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="value" value="{{ '0' if c[name] else '1' }}">
+        <form method="post" action="{{ url_for('enrollments.flag', enrollment_id=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="value" value="{{ '0' if c[name] else '1' }}">
           <button class="btn btn-sm {{ 'btn-primary' if c[name] }}">{{ '✓ ' if c[name] }}{{ label }}</button></form>
         {% endfor %}
       </div>
