@@ -26,10 +26,17 @@ NAMING = {
 }
 Base = declarative_base(metadata=MetaData(naming_convention=NAMING))
 
-# JSONB on Postgres (indexable with GIN), plain JSON text elsewhere (SQLite in tests).
-JSONType = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
-JSONDict = MutableDict.as_mutable(JSONType)
-JSONList = MutableList.as_mutable(JSONType)
+
+
+def json_type():
+    """JSONB on Postgres (indexable with GIN), plain JSON text elsewhere (SQLite in tests)."""
+    return JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+
+
+JSONType = json_type()
+# Separate type instances: SQLAlchemy ties mutation tracking to the type object.
+JSONDict = MutableDict.as_mutable(json_type())
+JSONList = MutableList.as_mutable(json_type())
 # 64-bit keys for append-only tables that grow without bound; SQLite needs INTEGER for rowid aliasing.
 BigID = BigInteger().with_variant(Integer(), "sqlite")
 

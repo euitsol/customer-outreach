@@ -13,7 +13,7 @@
 Re-runnable: rows already linked to a person are skipped.
 """
 import json
-
+import sys
 from datetime import datetime
 
 from sqlalchemy import MetaData, Table, select, text
@@ -85,7 +85,7 @@ def upgrade(conn):
         "SELECT COUNT(*) FROM (SELECT campaign_id, person_id FROM enrollments GROUP BY campaign_id, person_id "
         "HAVING COUNT(*) > 1) d")).scalar()
     if dupes:
-        print(f"migration: {dupes} person(s) enrolled twice in one campaign; unique index not created", flush=True)
+        print(f"migration: {dupes} person(s) enrolled twice in one campaign; unique index not created", file=sys.stderr, flush=True)
 
     if pg:
         _postgres_constraints(conn, dupes)

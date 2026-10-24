@@ -3,6 +3,8 @@
 Every helper is idempotent so a migration that died half-way on a non-transactional backend can
 simply be run again.
 """
+import sys
+
 from sqlalchemy import inspect, text
 
 
@@ -127,5 +129,5 @@ def pg_try(conn, sql):
         return True
     except Exception as e:  # noqa: BLE001
         sp.rollback()
-        print(f"migration: skipped optional statement ({e.__class__.__name__}): {sql[:80]}", flush=True)
+        print(f"migration: skipped optional statement ({e.__class__.__name__}): {sql[:80]}", file=sys.stderr, flush=True)
         return False

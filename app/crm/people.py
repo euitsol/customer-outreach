@@ -397,18 +397,23 @@ def merge(session, keep, other, actor=None):
             set_primary_phone(session, keep, p)
     kept_campaigns = {e.campaign_id: e for e in keep.enrollments}
     from app.services import delete_enrollments
-    drop = []
+    drop, move = [], []
     for e in list(other.enrollments):
         mine = kept_campaigns.get(e.campaign_id)
         if mine is None:
-            e.person_id = keep.id
+            move.append(e.id)
         elif (e.stage or 0) > (mine.stage or 0):     # keep whichever got further
             drop.append(mine.id)
-            e.person_id = keep.id
+            move.append(e.id)
         else:
             drop.append(e.id)
     session.flush()
-    delete_enrollments(session, drop)
+    delete_enrollments(session, drop)               # first, so (campaign, person) stays unique
+    if move:
+        session.query(Enrollment).filter(Enrollment.id.in_(move)).update({Enrollment.person_id: keep.id},
+                                                                          synchronize_session=False)
+    session.expire(keep, ["enrollments"])
+    session.expire(other, ["enrollments"])
     for model in (Activity, Task, Conversation):
         session.query(model).filter(model.person_id == other.id).update({model.person_id: keep.id},
                                                                         synchronize_session=False)

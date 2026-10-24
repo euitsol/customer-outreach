@@ -13,6 +13,8 @@ rows (sales pipeline, email channel account).
 Writing a new migration: add `vNNNN_name.py` with VERSION, NAME and `upgrade(conn)`, append it to
 MIGRATIONS, and only use the idempotent helpers in `ops` (add_column, create_model_table, ...).
 """
+import sys
+
 from sqlalchemy import inspect, text
 
 from app.clock import utcnow
@@ -69,16 +71,16 @@ def _run(conn):
     for m in MIGRATIONS:
         if m.VERSION in done:
             continue
-        print(f"migration {m.VERSION:04d} {m.NAME}: applying", flush=True)
+        print(f"migration {m.VERSION:04d} {m.NAME}: applying", file=sys.stderr, flush=True)
         try:
             m.upgrade(conn)
             _stamp(conn, m)
             conn.commit()
         except Exception:
             conn.rollback()
-            print(f"migration {m.VERSION:04d} {m.NAME}: FAILED, rolled back", flush=True)
+            print(f"migration {m.VERSION:04d} {m.NAME}: FAILED, rolled back", file=sys.stderr, flush=True)
             raise
-        print(f"migration {m.VERSION:04d} {m.NAME}: done", flush=True)
+        print(f"migration {m.VERSION:04d} {m.NAME}: done", file=sys.stderr, flush=True)
     # Safety net for tables declared in models after the last migration (no-op normally).
     Base.metadata.create_all(conn, checkfirst=True)
     conn.commit()
