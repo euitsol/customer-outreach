@@ -38,10 +38,10 @@
         <h2 class="mb2">Import settings</h2>
         <div class="stack">
           <div class="field"><span class="lbl">Campaign</span>
-            <select name="campaign_id"><option value="">+ New campaign…</option>
+            <select name="campaign_id"><option value="crm" {{ 'selected' if crm_only }}>No campaign: CRM only</option><option value="" {{ 'selected' if not crm_only and not camp }}>+ New campaign…</option>
               {% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if camp and camp.id == cp.id }}>{{ cp.name }}</option>{% endfor %}</select>
             <input type="text" name="new_name" class="mt1" placeholder="New campaign name" value="{{ new_name }}"></div>
-          <label class="field"><span class="lbl">If an email already exists in the campaign</span>
+          <label class="field"><span class="lbl">If an email already exists {{ 'in the CRM' if crm_only else 'in the campaign' }}</span>
             <select name="mode">
               <option value="upsert" {{ 'selected' if mode == 'upsert' }}>Update it with the file's values</option>
               <option value="create_only" {{ 'selected' if mode == 'create_only' }}>Skip it (add new contacts only)</option>

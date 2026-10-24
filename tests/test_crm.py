@@ -414,3 +414,35 @@ def test_users_and_login(client):
     assert s.query(Person).filter_by(email="mine@example.com").one().owner_id == u.id
     assert s.query(AuditLog).filter_by(actor_label="Owner", entity_type="person", action="create").count() == 1
     s.close()
+
+
+def test_crm_only_import(client):
+    import io
+    csv_data = ("Email,First name,Company,Website,Job title,Tags,Rooms\n"
+                "anna@castlehotel.ie,Anna,Castle Hotel,castlehotel.ie,GM,hotel,40\n"
+                "ANNA@castlehotel.ie,Dup,,,,,\n"
+                "grace@cobol.org,Grace H,,,,navy,\n")                 # already a person from an earlier test
+    up = client.post("/import", data={"csrf_token": token(client), "campaign_id": "crm",
+                                      "file": (io.BytesIO(csv_data.encode()), "people.csv")},
+                     content_type="multipart/form-data")
+    assert up.status_code == 302 and "campaign_id=crm" in up.headers["Location"]
+    page = client.get(up.headers["Location"]).get_data(as_text=True)
+    assert "stage1_body" not in page                                      # no campaign stage targets
+    tok = re.search(r"/import/([0-9a-f]{24})", up.headers["Location"]).group(1)
+    sels = re.findall(r'<select name="(map_\d+)">(.*?)</select>', page, re.S)
+    data = {"csrf_token": token(client), "campaign_id": "crm", "mode": "upsert", "extra_custom": "1", "confirm": "1"}
+    for name, body in sels:
+        data[name] = re.search(r'<option value="([^"]+)" selected', body).group(1)
+    s = SessionLocal()
+    before = s.query(Enrollment).count()
+    r = client.post(f"/import/{tok}", data=data)
+    assert r.status_code == 302 and "/people" in r.headers["Location"]
+    s.expire_all()
+    anna = s.query(Person).filter_by(email="anna@castlehotel.ie").one()
+    assert anna.first_name == "Anna" and anna.job_title == "GM" and anna.company.domain == "castlehotel.ie"
+    assert anna.attributes == {"rooms": "40"} and [t.name for t in anna.tags] == ["hotel"]
+    grace = s.query(ContactPoint).filter_by(value="grace@cobol.org").one().person
+    assert grace.first_name == "Grace H" and "navy" in [t.name for t in grace.tags]   # updated in place
+    assert s.query(Person).join(ContactPoint).filter(ContactPoint.value == "grace@cobol.org").count() == 1
+    assert s.query(Enrollment).count() == before                          # nobody enrolled
+    s.close()

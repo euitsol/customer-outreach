@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.clock import utcnow
 from app.models import (
-    Campaign, CampaignStep, Company, Enrollment, Event, Message, Person, Tag, person_tags,
+    CampaignStep, Company, Enrollment, Event, Message, Person, Tag, person_tags,
 )
 from app.services import not_suppressed, sendable
 

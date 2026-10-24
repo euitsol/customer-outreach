@@ -1,14 +1,12 @@
 import hmac
 import imaplib
 import time
-from datetime import datetime
 from zoneinfo import ZoneInfo, available_timezones
 
 from flask import (
-    Blueprint, Response, jsonify, redirect, render_template, request, session as flask_session, url_for,
+    Blueprint, jsonify, redirect, render_template, request, session as flask_session, url_for,
 )
 from sqlalchemy import func, text
-
 from werkzeug.security import check_password_hash
 
 from app import config, mailer, settings as app_settings

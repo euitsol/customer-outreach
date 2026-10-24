@@ -371,6 +371,68 @@ def apply_plan(session, campaign, plan, settings=None):
     return created, updated, locked
 
 
+# ------------------------------------------------------------------ CRM-only import (no campaign)
+
+def existing_people_by_email(session, emails):
+    """{email: Person} for every address already known (primary or secondary), looked up in chunks."""
+    from app.models import ContactPoint, Person
+    out, emails = {}, list(emails)
+    for i in range(0, len(emails), 500):
+        chunk = emails[i:i + 500]
+        for cp in session.query(ContactPoint).filter(ContactPoint.kind == "email", ContactPoint.value.in_(chunk)):
+            out[cp.value] = cp.person
+        for p in session.query(Person).filter(Person.email.in_(chunk)):
+            out.setdefault(p.email, p)
+    return out
+
+
+def analyse_people(session, parsed, mode="upsert"):
+    """Dry run of a people-only import."""
+    existing = existing_people_by_email(session, {r["email"] for r in parsed})
+    seen, plan = set(), []
+    stats = {"creates": 0, "updates": 0, "skip_existing": 0, "skip_missing": 0, "skip_dnr": 0,
+             "dupes_in_file": 0, "customised": 0}
+    for rec in parsed:
+        e = rec["email"]
+        if e in seen:
+            stats["dupes_in_file"] += 1
+            continue
+        seen.add(e)
+        person = existing.get(e)
+        if mode == "create_only" and person is not None:
+            stats["skip_existing"] += 1
+            continue
+        if mode == "update_only" and person is None:
+            stats["skip_missing"] += 1
+            continue
+        stats["updates" if person is not None else "creates"] += 1
+        plan.append((rec, person))
+    return plan, stats
+
+
+def apply_people(session, plan, source="import"):
+    """Create / update people (and their companies) without enrolling them anywhere.
+    Extra columns become the person's custom field values."""
+    actor = audit.Actor("system", label="import")
+    created = updated = 0
+    for rec, existing in plan:
+        person, is_new = people_svc.upsert(
+            session, email=rec["email"], phone=rec.get("phone"), first_name=rec.get("first_name"),
+            last_name=rec.get("last_name"), job_title=rec.get("job_title"), company_name=rec.get("company"),
+            company_website=rec.get("company_website"), source=source, attributes=rec["custom"] or None,
+            overwrite=True, actor=actor)
+        if rec.get("tags"):
+            people_svc.add_tags(session, person, rec["tags"])
+        note = (rec.get("notes") or "").strip()
+        if note and not session.query(Activity).filter(Activity.person_id == person.id, Activity.kind == "note",
+                                                       Activity.body == note).first():
+            activities_svc.log(session, kind="note", subject="Note (import)", body=note, person_id=person.id)
+        created += is_new
+        updated += not is_new
+    session.flush()
+    return created, updated
+
+
 # ------------------------------------------------------------------ export / templates
 
 CORE_COLUMNS = ["email", "first_name", "last_name", "job_title", "company", "company_website", "phone", "priority",

@@ -7,7 +7,7 @@
   <div><h1>People</h1><div class="sub">Everyone in your CRM: leads, prospects and customers, with or without a campaign.</div></div>
   <div class="page-actions">
     <a class="btn" href="{{ url_for('people.export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export</a>
-    <a class="btn" href="{{ url_for('imports.upload') }}">{{ icon('upload') }} Import</a>
+    <a class="btn" href="{{ url_for('imports.upload', campaign='crm') }}">{{ icon('upload') }} Import</a>
     <a class="btn btn-primary" href="{{ url_for('people.new') }}">{{ icon('plus') }} Add person</a>
   </div>
 </div>

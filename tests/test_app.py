@@ -1,16 +1,16 @@
 """End-to-end checks of the panel, the worker and the tracking endpoints (SQLite, SMTP mocked)."""
 import re
-from datetime import datetime, timedelta
-from app.clock import utcnow
+from datetime import timedelta
 from email import message_from_string
 from email.header import decode_header, make_header
 
 import pytest
 
 from app import mailer, worker
+from app.clock import utcnow
 from app.db import SessionLocal
 from app.mailer import SendError
-from app.models import Campaign, Enrollment, Event, Message, Person, Suppression
+from app.models import Campaign, Enrollment, Event, Message, Suppression
 from app.web import app
 
 
