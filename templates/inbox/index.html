@@ -50,7 +50,7 @@
       {% for m in thread %}{% set seq = m.sequence_message %}
         <div class="bubble {{ m.direction }} {{ 'failed' if m.status == 'failed' }}">
           {% if m.subject or (seq and seq.sent_subject) %}<div class="subj">{{ m.subject or seq.sent_subject }}</div>{% endif %}
-          {{- m.body or (seq.sent_body if seq else '') or '' -}}
+          <div class="msg-text">{{ m.body or (seq.sent_body if seq else '') or '' }}</div>
           <div class="meta">
             <span>{{ (m.sent_at or m.created_at)|dt }}</span>
             {% if m.sequence_message_id %}<span>campaign email, stage {{ seq.position if seq else '' }}</span>{% endif %}

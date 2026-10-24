@@ -41,7 +41,7 @@
             <label class="check"><input type="radio" name="channel" value="whatsapp" {{ 'checked' if p.phone and not p.email }} {{ 'disabled' if not p.phone }}><span>WhatsApp{% if not p.phone %} <span class="faint">(no number)</span>{% elif not channels.whatsapp %} <span class="faint">(not connected)</span>{% endif %}</span></label>
           </div>
           <div data-for="email"><input type="text" name="subject" placeholder="Subject (blank = continue the last thread)"></div>
-          <textarea name="body" rows="5" placeholder="Write your message… (your signature from Settings is added to emails)"></textarea>
+          <textarea name="body" rows="3" placeholder="Write your message… (your signature from Settings is added to emails)"></textarea>
           <div data-for="whatsapp" class="small muted">
             {% if wa_window %}WhatsApp 24-hour window is open: free text is fine.{% else %}No reply from them in the last 24 hours, so WhatsApp only allows an approved template:{% endif %}
             <div class="row mt1">
@@ -55,9 +55,10 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head"><h2>Log activity</h2></div>
-      <div class="card-body">
+    <div class="card" id="timeline">
+      <div class="card-head"><h2>Timeline</h2><span class="small muted">notes, calls, messages, campaign email, tasks</span></div>
+      <div class="card-body" style="padding-top:8px">
+        <details class="fold mb1"><summary>{{ icon('note') }} Log a call, meeting or note</summary>
         <form method="post" action="{{ url_for('people.log_activity', person_id=p.id) }}">
           {{ csrf_field() }}
           <div class="form-grid">
@@ -70,12 +71,7 @@
           </div>
           <div class="form-actions"><button class="btn btn-primary btn-sm">Save to timeline</button></div>
         </form>
-      </div>
-    </div>
-
-    <div class="card" id="timeline">
-      <div class="card-head"><h2>Timeline</h2><span class="small muted">notes, calls, messages, campaign email, tasks</span></div>
-      <div class="card-body" style="padding-top:4px">
+        </details>
         <ul class="feed">
         {% for i in timeline %}
           {% set k = i.kind %}

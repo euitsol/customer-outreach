@@ -176,7 +176,7 @@ def f_money(amount, currency=None):
 
 @app.template_filter("initials")
 def f_initials(name):
-    parts = [p for p in (name or "?").replace("@", " ").split() if p]
+    parts = [p for p in (name or "").replace("@", " ").replace(".", " ").split() if p[0].isalnum()]
     return "".join(p[0] for p in parts[:2]).upper() or "?"
 
 

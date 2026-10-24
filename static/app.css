@@ -344,7 +344,7 @@ details.fold[open] > summary { margin-bottom: 8px; }
 .lane-head .small { color: var(--muted); }
 .lane.won .lane-head { box-shadow: inset 0 3px 0 var(--good); }
 .lane.lost .lane-head { box-shadow: inset 0 3px 0 var(--faint); }
-.lane-body { padding: 8px; display: grid; gap: 8px; min-height: 120px; flex: 1; }
+.lane-body { padding: 8px; display: grid; gap: 8px; min-height: 120px; flex: 1; align-content: start; }
 .lane-body.drop { outline: 2px dashed var(--primary); outline-offset: -6px; border-radius: 8px; }
 .deal-card { background: var(--card); border: 1px solid var(--border); border-radius: 9px; padding: 10px 11px; cursor: grab; box-shadow: var(--shadow); }
 .deal-card:active { cursor: grabbing; }
@@ -372,11 +372,12 @@ details.fold[open] > summary { margin-bottom: 8px; }
 .thread { display: flex; flex-direction: column; min-width: 0; }
 .thread-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .thread-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: 56vh; background: var(--bg); }
-.bubble { max-width: min(640px, 85%); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); white-space: pre-wrap; font-size: 13.5px; }
+.bubble { max-width: min(640px, 85%); padding: 9px 13px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); font-size: 13.5px; align-self: flex-start; }
+.bubble .msg-text { white-space: pre-wrap; word-break: break-word; }
 .bubble.out { align-self: flex-end; background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 25%, var(--border)); }
 .bubble.failed { border-color: var(--bad); }
 .bubble .meta { font-size: 11.5px; color: var(--muted); margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
-.bubble .subj { font-weight: 650; margin-bottom: 4px; white-space: normal; }
+.bubble .subj { font-weight: 650; margin-bottom: 4px; }
 .composer { border-top: 1px solid var(--border); padding: 12px 16px; }
 .composer textarea { min-height: 90px; }
 
@@ -388,3 +389,6 @@ details.fold[open] > summary { margin-bottom: 8px; }
   .inbox { grid-template-columns: 1fr; }
   .inbox-list { max-height: 40vh; border-right: 0; border-bottom: 1px solid var(--border); }
 }
+
+/* icons placed in headings / text get a text-sized default (buttons, nav, facts override it) */
+.main svg { width: 1.1em; height: 1.1em; vertical-align: -0.17em; flex: none; }

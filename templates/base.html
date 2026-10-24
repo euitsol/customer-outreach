@@ -8,7 +8,7 @@
 <meta name="csrf" content="{{ csrf_token() }}">
 <meta name="robots" content="noindex,nofollow">
 <title>{% block title %}Outreach{% endblock %} · Outreach CRM</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=3">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=5">
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -65,7 +65,7 @@
     {% block content %}{% endblock %}
   </main>
 </div>
-<script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
