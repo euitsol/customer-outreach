@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from flask import Blueprint, render_template
 from sqlalchemy import func
@@ -15,7 +16,7 @@ def _age(value):
     if not value:
         return None
     try:
-        return (datetime.utcnow() - datetime.fromisoformat(value)).total_seconds()
+        return (utcnow() - datetime.fromisoformat(value)).total_seconds()
     except ValueError:
         return None
 
@@ -47,7 +48,7 @@ def index():
     peak = max([max(d["sent"], d["opened"], d["clicked"], d["replied"]) for d in activity] + [1])
     summaries = campaign_summaries(sess)
     campaigns = sess.query(Campaign).filter(Campaign.status != "archived").order_by(Campaign.id.desc()).all()
-    now = datetime.utcnow()
+    now = utcnow()
     upcoming = (sess.query(Contact).join(Campaign, Campaign.id == Contact.campaign_id)
                 .filter(Campaign.status == "active", Contact.send_flag == True,  # noqa: E712
                         Contact.unsubscribed == False, Contact.replied == False,  # noqa: E712

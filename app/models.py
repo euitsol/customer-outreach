@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, Text, DateTime, Date, ForeignKey, Table,
@@ -7,11 +6,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from app.clock import utcnow
 from app.db import Base
-
-
-def utcnow():
-    return datetime.utcnow()
 
 
 contact_tags = Table(

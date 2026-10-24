@@ -1,6 +1,7 @@
 """Core domain logic shared by the web panel, the worker and the importer."""
 import re
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from sqlalchemy import and_, exists, func, literal, or_
 
@@ -146,7 +147,7 @@ def has_custom_content(message):
 
 def recompute_contact(session, contact, steps=None, campaign=None, now=None):
     """Refresh contact.next_due_at from stage / delays / overrides."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     campaign = campaign or contact.campaign
     steps = steps if steps is not None else steps_of(session, contact.campaign_id)
     nxt = next((s for s in steps if s.position == (contact.stage or 0) + 1), None)
@@ -249,7 +250,7 @@ def retry_failed(session, step_id=None, campaign_id=None, contact_ids=None, now=
 
 
 def skip_stage(session, contact, step, now=None):
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     m = get_or_create_message(session, contact, step)
     m.status, m.queued = "skipped", False
     if step.position > (contact.stage or 0):

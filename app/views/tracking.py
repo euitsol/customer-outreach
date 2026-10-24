@@ -1,5 +1,6 @@
 """Public endpoints hit by recipients: open pixel, click redirect, unsubscribe."""
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from flask import Blueprint, Response, abort, redirect, render_template, request
 
@@ -26,7 +27,7 @@ def track_open(token):
         if ev:
             contact_id, stage = ev.contact_id, ev.stage
     # ignore the instant "open" caused by mail servers scanning the message on arrival
-    scanner = sent_at is not None and datetime.utcnow() - sent_at < timedelta(seconds=8)
+    scanner = sent_at is not None and utcnow() - sent_at < timedelta(seconds=8)
     if contact_id and not scanner:
         s.add(Event(contact_id=contact_id, stage=stage, type="opened"))
         s.commit()

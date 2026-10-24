@@ -2,6 +2,7 @@ import random
 import time
 import traceback
 from datetime import datetime
+from app.clock import utcnow
 
 from sqlalchemy import and_, case, exists, func, or_, select
 
@@ -14,7 +15,7 @@ from app.services import not_suppressed, steps_of
 
 def status_text(session, text):
     app_settings.put(session, "worker_status", text)
-    app_settings.put(session, "worker_heartbeat", datetime.utcnow().isoformat())
+    app_settings.put(session, "worker_heartbeat", utcnow().isoformat())
     session.commit()
 
 
@@ -92,7 +93,7 @@ def _sleep(seconds, session):
 
 def run_cycle(session):
     s = app_settings.load(session)
-    now = datetime.utcnow()
+    now = utcnow()
     if s["sending_paused"]:
         status_text(session, "Paused: sending switched off in Settings")
         return
@@ -104,7 +105,7 @@ def run_cycle(session):
 
     while True:
         s = app_settings.load(session)
-        now = datetime.utcnow()
+        now = utcnow()
         if s["sending_paused"]:
             status_text(session, "Paused: sending switched off in Settings")
             return

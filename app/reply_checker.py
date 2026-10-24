@@ -5,6 +5,7 @@ import re
 import time
 import traceback
 from datetime import datetime, timedelta
+from app.clock import utcnow
 from email.header import decode_header, make_header
 from email.utils import getaddresses, parseaddr
 
@@ -134,7 +135,7 @@ def check_replies(session):
 
         last_uid = app_settings.get_raw(session, "imap_last_uid")
         if validity != app_settings.get_raw(session, "imap_uidvalidity") or last_uid is None:
-            since = (datetime.utcnow() - timedelta(days=14)).strftime("%d-%b-%Y")
+            since = (utcnow() - timedelta(days=14)).strftime("%d-%b-%Y")
             typ, data = imap.uid("SEARCH", None, "SINCE", since)
             last = 0
         else:
@@ -178,7 +179,7 @@ def main():
             app_settings.put(session, "reply_status", f"Error: {e}")
             print("reply_checker error:", traceback.format_exc(), flush=True)
         finally:
-            app_settings.put(session, "reply_heartbeat", datetime.utcnow().isoformat())
+            app_settings.put(session, "reply_heartbeat", utcnow().isoformat())
             try:
                 session.commit()
             except Exception:

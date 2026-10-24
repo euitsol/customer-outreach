@@ -1,5 +1,6 @@
 """Reusable SQL fragments, filters and statistics for the panel."""
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from sqlalchemy import and_, case, distinct, exists, func, or_, select
 
@@ -110,7 +111,7 @@ def contact_query(session, args, campaign_id=None):
         q = q.filter(exists().where(and_(
             contact_tags.c.contact_id == Contact.id, contact_tags.c.tag_id == Tag.id, Tag.name == tag)))
     status = args.get("status") or ""
-    now = datetime.utcnow()
+    now = utcnow()
     if status in STATUS_LABELS:
         q = q.filter(status_expr() == status)
     elif status == "due":
@@ -238,7 +239,7 @@ def engagement_stats(session, campaign_id=None):
 
 def stage_stats(session, campaign, steps):
     """Funnel numbers for every stage of one campaign."""
-    now = datetime.utcnow()
+    now = utcnow()
     ok = and_(Contact.send_flag == True, Contact.unsubscribed == False, Contact.replied == False,  # noqa: E712
               Contact.bounced == False, Contact.needs_verification == False)  # noqa: E712
     msg_counts = {}
@@ -287,7 +288,7 @@ def stage_stats(session, campaign, steps):
 
 def daily_activity(session, days=14, campaign_id=None, tzname=None):
     """[(date, sent, opened, clicked, replied)] oldest -> newest, in UTC days."""
-    since = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    since = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
     day = func.date(Event.created_at)
     q = (session.query(day, Event.type, func.count(Event.id))
          .filter(Event.created_at >= since, Event.type.in_(("sent", "opened", "clicked", "replied"))))

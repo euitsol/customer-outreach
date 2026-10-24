@@ -1,0 +1,10 @@
+# Local development: send through Mailtrap instead of the real SMTP account.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+# .env.mailtrap is read after .env, so its values win.
+services:
+  web:
+    env_file: [.env.mailtrap]
+  worker:
+    env_file: [.env.mailtrap]
+  reply_checker:
+    env_file: [.env.mailtrap]

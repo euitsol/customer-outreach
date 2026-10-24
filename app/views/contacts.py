@@ -1,5 +1,6 @@
 import io
 from datetime import datetime
+from app.clock import utcnow
 from urllib.parse import parse_qsl
 
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
@@ -131,7 +132,7 @@ def detail(contact_id):
     s = settings_now()
     steps = steps_of(sess, camp.id)
     msgs = {m.step_id: m for m in c.messages}
-    now = datetime.utcnow()
+    now = utcnow()
     rows = []
     for st in steps:
         m = msgs.get(st.id)

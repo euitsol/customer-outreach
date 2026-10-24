@@ -1,6 +1,7 @@
 """Rendering and delivery of a single stage email, plus the bookkeeping that goes with it."""
 import secrets
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from app import mailer, merge, settings as app_settings
 from app.mailer import SendError
@@ -35,7 +36,7 @@ def send_stage(session, contact, step, *, s, campaign=None, steps=None, message=
     Returns (outcome, error) where outcome is 'sent' | 'failed' | 'system'.
     'system' means SMTP itself is unavailable - nothing is counted against the email.
     """
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     campaign = campaign or contact.campaign
     steps = steps if steps is not None else steps_of(session, contact.campaign_id)
     message = message or get_or_create_message(session, contact, step)

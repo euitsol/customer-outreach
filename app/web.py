@@ -1,6 +1,7 @@
 import hmac
 import secrets
 from datetime import datetime
+from app.clock import utcnow
 
 from flask import Flask, abort, g, redirect, render_template, request, session as flask_session, url_for
 from markupsafe import Markup, escape
@@ -88,7 +89,7 @@ def f_day(dt):
 def f_ago(dt):
     if not dt:
         return "never"
-    secs = (datetime.utcnow() - dt).total_seconds()
+    secs = (utcnow() - dt).total_seconds()
     if secs < 0:
         secs = -secs
         suffix = ""
@@ -106,7 +107,7 @@ def f_when(dt):
     """Friendly 'due' text: Now / in 3h / 12 Oct."""
     if not dt:
         return "Now"
-    if dt <= datetime.utcnow():
+    if dt <= utcnow():
         return "Due"
     return f_ago(dt)
 
@@ -158,7 +159,7 @@ app.jinja_env.globals.update(csrf_token=csrf_token, STATUS_LABELS=STATUS_LABELS,
 def inject():
     return {
         "auth_enabled": bool(config.ADMIN_PASSWORD),
-        "year": datetime.utcnow().year,
+        "year": utcnow().year,
     }
 
 

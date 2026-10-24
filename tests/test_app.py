@@ -1,6 +1,7 @@
 """End-to-end checks of the panel, the worker and the tracking endpoints (SQLite, SMTP mocked)."""
 import re
 from datetime import datetime, timedelta
+from app.clock import utcnow
 from email import message_from_string
 from email.header import decode_header, make_header
 
@@ -136,7 +137,7 @@ def test_full_flow(client, outbox):
     s.expire_all()
     bob = s.query(Contact).filter_by(email="bob@beta.ie").one()
     assert bob.stage == 1 and bob.message_id
-    assert bob.next_due_at is not None and bob.next_due_at > datetime.utcnow() + timedelta(hours=50)  # 2d3h wait
+    assert bob.next_due_at is not None and bob.next_due_at > utcnow() + timedelta(hours=50)  # 2d3h wait
     assert s.get(Contact, jane.id).next_due_at == m2.due_at
 
     # --- nothing more is due; running again sends nothing
@@ -190,7 +191,7 @@ def test_tracking_and_unsubscribe(client):
     s = SessionLocal()
     bob = s.query(Contact).filter_by(email="bob@beta.ie").one()
     msg = s.query(Message).filter_by(contact_id=bob.id, position=1).one()
-    msg.sent_at = datetime.utcnow() - timedelta(minutes=5)
+    msg.sent_at = utcnow() - timedelta(minutes=5)
     s.commit()
     # public endpoints need no login
     anon = app.test_client()

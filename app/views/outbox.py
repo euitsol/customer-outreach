@@ -1,6 +1,7 @@
 import csv
 import io
 from datetime import datetime, timedelta
+from app.clock import utcnow
 
 from flask import Blueprint, Response, abort, redirect, render_template, request, url_for
 from sqlalchemy import and_, func, or_
@@ -25,7 +26,7 @@ def _outbox_context(campaign=None):
     cid = campaign.id if campaign else int_arg("campaign")
     stage = int_arg("stage")
     term = (request.args.get("q") or "").strip().lower()
-    now = datetime.utcnow()
+    now = utcnow()
     counts = {}
 
     def with_filters(q):

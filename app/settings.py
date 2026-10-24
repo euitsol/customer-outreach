@@ -4,6 +4,7 @@ Defaults come from environment variables so an existing deployment keeps behavin
 exactly as before until the user changes something in the UI.
 """
 from datetime import datetime, timedelta, timezone as _tz
+from app.clock import utcnow
 from zoneinfo import ZoneInfo
 
 from app import config
@@ -96,7 +97,7 @@ def to_local(dt, s):
 
 def local_midnight_utc(s, now=None):
     """Start of the current local day as naive UTC."""
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     local = to_local(now, s)
     start = local.replace(hour=0, minute=0, second=0, microsecond=0)
     return start.astimezone(_tz.utc).replace(tzinfo=None)
@@ -114,7 +115,7 @@ def in_send_window(s, now=None):
     """(allowed, next_open_utc_or_None)"""
     if not s["window_enabled"] and not s["weekdays_only"]:
         return True, None
-    now = now or datetime.utcnow()
+    now = now or utcnow()
     local = to_local(now, s)
     start = _hhmm(s["window_start"], 8 * 60)
     end = _hhmm(s["window_end"], 18 * 60)
