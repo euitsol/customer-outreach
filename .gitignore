@@ -222,3 +222,4 @@ __marimo__/
 
 # DB dumps
 backup*.sql
+backups/

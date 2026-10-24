@@ -1,7 +1,15 @@
 marketing.europeanit.academy {
-    reverse_proxy web:8000
+    # Claude / MCP clients (API-key protected by the mcp service itself)
+    handle /mcp* {
+        reverse_proxy mcp:8092
+    }
+    handle {
+        reverse_proxy web:8000
+    }
 }
 
+# Public endpoints hit by recipients and providers: tracking pixel / links / unsubscribe,
+# WhatsApp webhooks (signature-checked).
 track.euitsols.com {
     reverse_proxy web:8000
 }

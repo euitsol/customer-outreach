@@ -8,3 +8,5 @@ services:
     env_file: [.env.mailtrap]
   reply_checker:
     env_file: [.env.mailtrap]
+  mcp:
+    env_file: [.env.mailtrap]

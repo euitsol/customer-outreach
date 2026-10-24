@@ -115,6 +115,7 @@ def _postgres_constraints(conn, dupes):
         ("campaigns", "owner_id", "users", "SET NULL"),
     ]:
         ops.pg_replace_fk(conn, table, column, ref, rule)
+    conn.execute(text("ALTER TABLE enrollments ALTER COLUMN email TYPE VARCHAR(320)"))
     for table in ("events", "click_links"):
         conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN id TYPE BIGINT"))
         ops.pg_try(conn, f"ALTER SEQUENCE {table}_id_seq AS BIGINT")

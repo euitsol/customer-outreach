@@ -26,6 +26,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   worker:
     build: .
@@ -45,6 +51,21 @@ services:
     env_file: .env
     environment:
       PYTHONUNBUFFERED: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # MCP server: lets Claude (Desktop, Code, claude.ai connectors) work with the CRM.
+  # Every request needs an API key (Workspace > API keys). Publish it through your proxy at /mcp.
+  mcp:
+    build: .
+    restart: unless-stopped
+    command: python -m app.mcp_server
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "127.0.0.1:8092:8092"
     depends_on:
       db:
         condition: service_healthy
