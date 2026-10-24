@@ -68,7 +68,7 @@
       <div class="card-head"><h2>Campaigns</h2><a class="btn btn-sm" href="{{ url_for('campaigns.index') }}">View all</a></div>
       {% if campaigns %}
       <div class="table-wrap"><table class="tbl">
-        <thead><tr><th>Campaign</th><th>Status</th><th class="num">Contacts</th><th class="num">Ready</th><th class="num">In sequence</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th></tr></thead>
+        <thead><tr><th>Campaign</th><th>Status</th><th class="num">Enrolled</th><th class="num">Ready</th><th class="num">In sequence</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th></tr></thead>
         <tbody>
         {% for c in campaigns[:8] %}{% set m = summaries.get(c.id, {}) %}
           <tr>

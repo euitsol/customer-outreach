@@ -107,7 +107,7 @@
       <button class="btn btn-sm" name="action" value="add_tags" data-needs="#bulk-tags">Add tag</button>
       <button class="btn btn-sm" name="action" value="remove_tags" data-needs="#bulk-tags">Remove tag</button>
       <span class="sep"></span>
-      <input type="datetime-local" name="due_at" style="max-width:195px" title="Send date for each contact's next email ({{ s.timezone }})">
+      <input type="datetime-local" name="due_at" style="max-width:195px" title="Send date for each person's next email ({{ s.timezone }})">
       <button class="btn btn-sm" name="action" value="reschedule" title="Empty date = clear the custom date">Set next send date</button>
       <span class="sep"></span>
       <select name="campaign_id" style="max-width:190px"><option value="">Move to campaign…</option>{% for cp in campaigns %}<option value="{{ cp.id }}">{{ cp.name }}</option>{% endfor %}</select>

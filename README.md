@@ -18,7 +18,17 @@ hard bounces suppress the address across campaigns and are recorded as consent /
 "do not contact" blocks every channel; every change made by users, the API or Claude lands in the
 audit log.
 
-Database design, ER diagram and migration workflow: [docs/DATABASE.md](docs/DATABASE.md).
+## Documentation
+
+| For | Read |
+|---|---|
+| Everyone using the CRM | [User guide](docs/USER_GUIDE.md) - concepts, setup, every workflow, FAQ |
+| Connecting Claude | [MCP guide](docs/MCP.md) |
+| Integrations / scripts | [REST API](docs/API.md) |
+| Whoever runs the server | [Operations](docs/OPERATIONS.md) - env vars, deploy, backups, WhatsApp setup, troubleshooting |
+| Developers | [Architecture](docs/ARCHITECTURE.md), [Database design](docs/DATABASE.md) |
+| AI coding assistants | [AGENTS.md](AGENTS.md) (also loaded via `CLAUDE.md`) |
+| What changed | [CHANGELOG](CHANGELOG.md) |
 
 ## Configuration
 

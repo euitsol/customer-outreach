@@ -3,7 +3,7 @@
 {% block title %}Campaigns{% endblock %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Campaigns</h1><div class="sub">Each campaign has its own sequence of emails, contacts and pacing.</div></div>
+  <div><h1>Campaigns</h1><div class="sub">Each campaign has its own sequence of emails, enrolled people and pacing.</div></div>
   <div class="page-actions"><a class="btn btn-primary" href="{{ url_for('campaigns.new') }}">{{ icon('plus') }} New campaign</a></div>
 </div>
 
@@ -21,7 +21,7 @@
   </form>
   {% if campaigns %}
   <div class="table-wrap"><table class="tbl">
-    <thead><tr><th>Campaign</th><th>Status</th><th class="num">Stages</th><th class="num">Contacts</th><th>Progress</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th><th class="num">Failed</th><th></th></tr></thead>
+    <thead><tr><th>Campaign</th><th>Status</th><th class="num">Stages</th><th class="num">Enrolled</th><th>Progress</th><th class="num">Sent</th><th class="num">Open rate</th><th class="num">Replied</th><th class="num">Failed</th><th></th></tr></thead>
     <tbody>
     {% for c in campaigns %}{% set m = summaries.get(c.id, {}) %}{% set total = m.get('total', 0) %}
       <tr>
@@ -33,7 +33,7 @@
           {% if total %}<div class="progress" title="{{ m.get('in_sequence',0) }} in sequence, {{ m.get('finished',0) }} finished, {{ m.get('replied',0) }} replied">
             <i class="p-sent" style="width:{{ ((m.get('in_sequence',0)+m.get('finished',0)) / total * 100)|round(1) }}%"></i>
             <i class="p-replied" style="width:{{ (m.get('replied',0) / total * 100)|round(1) }}%"></i></div>
-          <div class="sub">{{ m.get('ready',0) }} ready</div>{% else %}<span class="faint">no contacts</span>{% endif %}
+          <div class="sub">{{ m.get('ready',0) }} ready</div>{% else %}<span class="faint">nobody enrolled</span>{% endif %}
         </td>
         <td class="num">{{ m.get('sent', 0) }}</td>
         <td class="num">{{ m.get('open_rate', 0) }}%</td>

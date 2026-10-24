@@ -2,7 +2,7 @@
 {% block title %}New campaign{% endblock %}
 {% block content %}
 <div class="crumbs"><a href="{{ url_for('campaigns.index') }}">Campaigns</a> / New</div>
-<div class="page-head"><div><h1>New campaign</h1><div class="sub">You'll write the emails and import contacts next.</div></div></div>
+<div class="page-head"><div><h1>New campaign</h1><div class="sub">You'll write the emails and enroll people next.</div></div></div>
 <form method="post" class="card card-pad" style="max-width:640px">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="stack">

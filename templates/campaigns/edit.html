@@ -40,7 +40,7 @@
 <div class="grid g2 mt3" style="max-width:820px">
   <div class="card card-pad">
     <h3>Duplicate</h3>
-    <p class="muted small">Copies the emails and settings into a new draft (no contacts).</p>
+    <p class="muted small">Copies the emails and settings into a new draft (nobody is enrolled in the copy).</p>
     <form method="post" action="{{ url_for('campaigns.duplicate', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn">{{ icon('copy') }} Duplicate campaign</button></form>
     {% if c.status != 'archived' %}
     <h3 class="mt2">Archive</h3>
@@ -50,7 +50,7 @@
   </div>
   <div class="card card-pad danger-zone">
     <h3 style="color:var(--bad)">Delete campaign</h3>
-    <p class="muted small">Permanently deletes the campaign, its stages, all {{ n_contacts }} contacts and their history.</p>
+    <p class="muted small">Permanently deletes the campaign, its stages, all {{ n_contacts }} enrollments and their sending history. The people stay in the CRM.</p>
     <form method="post" action="{{ url_for('campaigns.delete', cid=c.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="field"><span class="lbl">Type <code>{{ c.name }}</code> to confirm</span><input type="text" name="confirm_name" autocomplete="off"></label>

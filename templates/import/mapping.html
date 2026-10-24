@@ -44,7 +44,7 @@
           <label class="field"><span class="lbl">If an email already exists {{ 'in the CRM' if crm_only else 'in the campaign' }}</span>
             <select name="mode">
               <option value="upsert" {{ 'selected' if mode == 'upsert' }}>Update it with the file's values</option>
-              <option value="create_only" {{ 'selected' if mode == 'create_only' }}>Skip it (add new contacts only)</option>
+              <option value="create_only" {{ 'selected' if mode == 'create_only' }}>Skip it (add new ones only)</option>
               <option value="update_only" {{ 'selected' if mode == 'update_only' }}>Only update existing (e.g. add personalised emails)</option>
             </select>
             <div class="hint">Empty cells never erase existing data. Stages that were already sent are never changed.</div></label>
@@ -58,7 +58,7 @@
         {% for p in problems %}<div class="flash warn mb1"><span>{{ p }}</span></div>{% endfor %}
         {% if preview %}
           <dl class="kv" style="grid-template-columns:150px 1fr">
-            <dt>New contacts</dt><dd><b>{{ preview.stats.creates }}</b></dd>
+            <dt>New</dt><dd><b>{{ preview.stats.creates }}</b></dd>
             <dt>Will be updated</dt><dd><b>{{ preview.stats.updates }}</b></dd>
             <dt>With personalised text</dt><dd>{{ preview.stats.customised }}</dd>
             {% if preview.stats.skip_existing %}<dt>Skipped (exist)</dt><dd>{{ preview.stats.skip_existing }}</dd>{% endif %}
@@ -76,7 +76,7 @@
             <ul class="small" style="padding-left:16px;margin:0">{% for em, fn, co, steps, existing in preview.sample %}<li>{{ em }} {{ '(update)' if existing else '(new)' }}{% if steps %} · personalised stage{{ 's' if steps|length > 1 }} {{ steps|join(', ') }}{% endif %}</li>{% endfor %}</ul></details>
           {% endif %}
           <div class="form-actions">
-            <button class="btn btn-primary" name="confirm" value="1" data-once="1" {{ 'disabled' if (preview.stats.creates + preview.stats.updates) == 0 }}>Import {{ preview.stats.creates + preview.stats.updates }} contact{{ 's' if (preview.stats.creates + preview.stats.updates) != 1 }}</button>
+            <button class="btn btn-primary" name="confirm" value="1" data-once="1" {{ 'disabled' if (preview.stats.creates + preview.stats.updates) == 0 }}>Import {{ preview.stats.creates + preview.stats.updates }} {{ 'person' if (preview.stats.creates + preview.stats.updates) == 1 else 'people' }}</button>
             <a class="btn btn-ghost" href="{{ url_for('imports.upload') }}">Cancel</a>
           </div>
         {% endif %}

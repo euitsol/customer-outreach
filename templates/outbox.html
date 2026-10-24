@@ -69,14 +69,14 @@
     <div class="bulkbar hidden" id="bulkbar">
       <b><span id="sel-count">0</span> selected</b>
       {% if view == 'failed' %}<button class="btn btn-sm" name="action" value="retry">{{ icon('refresh') }} Retry now</button>
-      <button class="btn btn-sm" name="action" value="skip" data-confirm="Skip these stages? The contacts move on to their next stage.">Skip stage</button>{% else %}
+      <button class="btn btn-sm" name="action" value="skip" data-confirm="Skip these stages? Those people move on to their next stage.">Skip stage</button>{% else %}
       <button class="btn btn-sm" name="action" value="cancel">Cancel send</button>{% endif %}
     </div>
     {% endif %}
   </form>
   {% else %}
   <div class="empty"><h3>{{ {'upcoming': 'Nothing scheduled', 'queued': 'Nothing queued', 'failed': 'No failed emails'}[view] }}</h3>
-    <p>{{ {'upcoming': 'Start a campaign with ready contacts to see what the worker will send next.', 'queued': 'Use "Send now" on a contact or stage to queue an email ahead of schedule.', 'failed': 'Everything that was attempted has been delivered.'}[view] }}</p></div>
+    <p>{{ {'upcoming': 'Start a campaign with people enrolled to see what the worker will send next.', 'queued': 'Use "Send now" on an enrollment or stage to queue an email ahead of schedule.', 'failed': 'Everything that was attempted has been delivered.'}[view] }}</p></div>
   {% endif %}
 </div>
 {% endblock %}

@@ -98,7 +98,7 @@ def new():
             else:
                 create_default_steps(sess, c)
             sess.commit()
-            ok("Campaign created. Write your emails, then import contacts.")
+            ok("Campaign created. Write your emails, then import or enroll people.")
             return redirect(url_for("campaigns.sequence", cid=c.id))
     others = sess.query(Campaign).order_by(Campaign.name).all()
     return render_template("campaigns/new.html", others=others, form=request.form)
@@ -210,7 +210,7 @@ def delete(cid):
     name = c.name
     n = delete_campaign(sess, c)
     sess.commit()
-    ok(f"Deleted '{name}' and {n} contact(s).")
+    ok(f"Deleted '{name}' and its {n} enrollment(s). The people stay in the CRM.")
     return redirect(url_for("campaigns.index"))
 
 
@@ -224,7 +224,7 @@ def duplicate(cid):
         name, i = f"{base} {i}", i + 1
     new = duplicate_campaign(sess, c, name)
     sess.commit()
-    ok("Duplicated the campaign's emails and settings (contacts are not copied).")
+    ok("Duplicated the campaign's emails and settings (nobody is enrolled in the copy).")
     return redirect(url_for("campaigns.sequence", cid=new.id))
 
 
@@ -413,7 +413,7 @@ def step_action(cid, sid):
             else:
                 skipped += 1
         sess.commit()
-        ok(f"{n} contact(s) queued for stage {st.position}." + (f" {skipped} skipped (paused, replied, unsubscribed or no content)." if skipped else ""))
+        ok(f"{n} queued for stage {st.position}." + (f" {skipped} skipped (paused, replied, unsubscribed or no content)." if skipped else ""))
     elif action == "cancel_queued":
         ids = [i for (i,) in sess.query(Message.enrollment_id).filter(Message.step_id == sid, Message.queued == True)]  # noqa: E712
         n = cancel_queued(sess, ids) if ids else 0

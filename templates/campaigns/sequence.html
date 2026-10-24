@@ -6,7 +6,7 @@
 
 <div class="card card-pad mb2" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
   <div class="grow">
-    <b>Design the sequence.</b> <span class="muted">Each stage is one email. Write a template here, and optionally give individual contacts their own text per stage
+    <b>Design the sequence.</b> <span class="muted">Each stage is one email. Write a template here, and optionally give individual people their own text per stage
     (via <a href="{{ url_for('imports.upload', campaign=c.id) }}">CSV import</a> or on the contact page). Contacts without their own text get the template.</span>
   </div>
   <form method="post" action="{{ url_for('campaigns.step_add', cid=c.id) }}" class="row">
@@ -36,7 +36,7 @@
     </form>
     <form method="post" action="{{ url_for('campaigns.step_delete', cid=c.id, sid=st.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-ghost btn-sm" style="color:var(--bad)" data-confirm="Delete stage {{ st.position }}? Any custom text contacts have for it is deleted too.">{{ icon('trash') }}</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--bad)" data-confirm="Delete stage {{ st.position }}? Any custom text people have for it is deleted too.">{{ icon('trash') }}</button>
     </form>
   </div>
   <div class="stage-body">
@@ -49,7 +49,7 @@
             <input type="number" min="0" max="365" name="delay_days" class="inline-num" value="{{ st.delay_days_part }}"> <span class="muted">days</span>
             <input type="number" min="0" max="23" name="delay_hours" class="inline-num" value="{{ st.delay_hours_part }}"> <span class="muted">hours</span>
           </div>
-          <div class="hint">{{ 'Counted from when the contact was imported or the campaign start time.' if st.position == 1 else 'Counted from when the previous email was actually sent. Individual contacts can have their own date.' }}</div>
+          <div class="hint">{{ 'Counted from when the person was enrolled or the campaign start time.' if st.position == 1 else 'Counted from when the previous email was actually sent. Individual people can have their own date.' }}</div>
         </div>
         <label class="field full"><span class="lbl">Subject</span>
           <input type="text" name="subject" class="subject-edit" value="{{ st.subject or '' }}" placeholder="{{ 'Leave blank to reply in the same thread (Re: first subject)' if st.position > 1 else 'e.g. Quick question about {{company}}' }}">
@@ -68,8 +68,8 @@
         <button class="btn btn-primary">Save stage {{ st.position }}</button>
         <span class="grow"></span>
         {% if templates %}<select class="js-template" style="width:auto"><option value="">Load template…</option>{% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>{% endif %}
-        <select class="js-sample" style="width:auto;max-width:220px" title="Preview with a real contact">
-          <option value="">Sample contact</option>
+        <select class="js-sample" style="width:auto;max-width:220px" title="Preview with a real enrolled person">
+          <option value="">Sample person</option>
           {% for p in sample %}<option value="{{ p.id }}">{{ p.email }}</option>{% endfor %}
         </select>
         <button type="button" class="btn js-preview" data-url="{{ url_for('campaigns.step_preview', cid=c.id, sid=st.id) }}">Preview</button>
@@ -94,8 +94,8 @@
 {% endfor %}
 
 <div class="card card-pad mt2 muted small">
-  <b>How sending works:</b> the worker emails one contact at a time, waiting a random {{ s.min_delay }}–{{ s.max_delay }} seconds in between (change in
+  <b>How sending works:</b> the worker emails one person at a time, waiting a random {{ s.min_delay }}–{{ s.max_delay }} seconds in between (change in
   <a href="{{ url_for('admin.settings') }}">Settings</a>). After stage&nbsp;N is sent, stage&nbsp;N+1 becomes due once its wait time passes.
-  A reply, unsubscribe or bounce stops the sequence for that contact.
+  A reply, unsubscribe or bounce stops the sequence for that person (a WhatsApp reply too).
 </div>
 {% endblock %}
