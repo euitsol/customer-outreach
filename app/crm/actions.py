@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import selectinload
 
-from app import mailer, settings as app_settings
+from app import importer, mailer, settings as app_settings
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.crm import (
@@ -24,7 +24,7 @@ from app.models import (
     PipelineStage, Tag, Task, person_tags,
 )
 from app.queries import campaign_summaries, engagement_stats, stage_stats, status_counts
-from app.services import EnrollError, enroll, set_campaign_status, steps_of
+from app.services import EnrollError, create_default_steps, enroll, set_campaign_status, steps_of
 
 MAX_LIMIT = 200
 
@@ -385,6 +385,52 @@ def enroll_in_campaign(session, actor, campaign_id, person_ids=None, emails=None
     return {"campaign": camp.name, "campaign_status": camp.status, "results": results,
             "unknown_emails": missing,
             "note": None if camp.status == "active" else "Campaign is not active, so nothing is sent until it is started."}
+
+
+def import_campaign(session, actor, name, csv_text, mapping=None, dry_run=False):
+    """Create (or fill) a draft campaign from CSV text, exactly like the Import page: people are upserted
+    by email and enrolled, and per-person stage subject / body / date columns become overrides.
+    `mapping` maps a column header to an import target (e.g. {"Website": "company_website"}) on top of the
+    automatic guess. Nothing is sent: the campaign stays a draft until `set_campaign_state`."""
+    from app.crm import audit
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required.")
+    if not (csv_text or "").strip():
+        raise ValueError("csv is required: the text of the CSV file, header row included.")
+    headers, rows = importer.read_table("import.csv", csv_text.encode("utf-8"))
+    columns = importer.guess_mapping(headers)
+    valid = {k for k, _ in importer.BASE_TARGETS + importer.step_targets(3)}
+    for header, target in (mapping or {}).items():
+        if header not in headers:
+            raise ValueError(f"mapping: there is no column called '{header}'.")
+        if target not in valid:
+            raise ValueError(f"mapping: '{target}' is not an import target.")
+        columns[headers.index(header)] = target
+    if "email" not in columns:
+        raise ValueError("No column maps to Email.")
+    parsed, errors = importer.parse_rows(rows, headers, columns)
+    camp = session.query(Campaign).filter(func.lower(Campaign.name) == name.lower()).first()
+    created = camp is None
+    if created:
+        camp = Campaign(name=name, status="draft", is_active=False)
+    plan, stats = importer.analyse(session, parsed, camp)
+    result = {"campaign": name, "new_campaign": created, "stats": stats, "rows": len(rows),
+              "errors": errors[:100], "error_count": len(errors),
+              "mapping": {h: columns[i] for i, h in enumerate(headers) if columns[i] != "ignore"}}
+    if dry_run:
+        return dict(result, dry_run=True)
+    if not plan:
+        raise ValueError("Nothing to import with these settings.")
+    if created:
+        session.add(camp)
+        session.flush()
+        create_default_steps(session, camp)
+        audit.record(session, actor, "create", "campaign", camp.id, {"name": name, "via": "import"})
+    n_new, n_upd, locked = importer.apply_plan(session, camp, plan, app_settings.load(session))
+    audit.record(session, actor, "import", "campaign", camp.id, {"created": n_new, "updated": n_upd})
+    return dict(result, dry_run=False, created=n_new, updated=n_upd, locked=locked, campaign_id=camp.id,
+                campaign_status=camp.status)
 
 
 def set_campaign_state(session, actor, campaign_id, status):

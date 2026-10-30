@@ -446,3 +446,51 @@ def test_crm_only_import(client):
     assert s.query(Person).join(ContactPoint).filter(ContactPoint.value == "grace@cobol.org").count() == 1
     assert s.query(Enrollment).count() == before                          # nobody enrolled
     s.close()
+
+
+def test_api_campaign_import(client):
+    from app.models import Message
+    s = SessionLocal()
+    raw_rw, _ = apikeys.create(s, "importer", ["read", "write"])
+    raw_ro, _ = apikeys.create(s, "viewer", ["read"])
+    s.commit()
+    api = app.test_client()
+    h = {"Authorization": f"Bearer {raw_rw}"}
+    csv_text = (
+        "Leads sheet,,,,,,\n"
+        "No,Send?,Email 1 date,First name,Company,Website (sheet),Email,Subject line,Email 1,Follow-up 1 date,Follow-up 1,Location\n"
+        '1,Send,Mon 2 Nov,Dave,Tri-Village,https://trivillage.test,dave@trivillage.test,Your form,"Hi Dave,\n\nFirst",Mon 9 Nov,"Hi Dave, again",Columbus\n'
+        "2,Verify first,Tue 3 Nov,Kay,Shehan Legal,https://shehan.test,kay@shehan.test,Your site,Hi Kay,Tue 10 Nov,Hi Kay again,NYC\n"
+    )
+    url = "/api/v1/campaigns/import"
+    assert api.post(url, json={"name": "X", "csv": csv_text}).status_code == 401
+    assert api.post(url, headers={"Authorization": f"Bearer {raw_ro}"}, json={"name": "X", "csv": csv_text}).status_code == 403
+    assert api.post(url, headers=h, json={"csv": csv_text}).status_code == 400
+    assert api.post(url, headers=h, json={"name": "X", "csv": csv_text, "mapping": {"Nope": "email"}}).status_code == 400
+
+    name = "API import campaign"
+    mapping = {"Website (sheet)": "company_website"}
+    dry = api.post(url, headers=h, json={"name": name, "csv": csv_text, "mapping": mapping, "dry_run": True})
+    assert dry.status_code == 201 and dry.get_json()["stats"]["creates"] == 2 and dry.get_json()["error_count"] == 0
+    s.expire_all()
+    assert s.query(Campaign).filter(Campaign.name == name).count() == 0         # dry run writes nothing
+
+    r = api.post(url, headers=h, json={"name": name, "csv": csv_text, "mapping": mapping})
+    out = r.get_json()
+    assert r.status_code == 201 and out["created"] == 2 and out["campaign_status"] == "draft", out
+    s.expire_all()
+    camp = s.get(Campaign, out["campaign_id"])
+    assert camp.status == "draft" and not camp.is_active
+    dave = s.query(Enrollment).filter(Enrollment.campaign_id == camp.id, Enrollment.email == "dave@trivillage.test").one()
+    kay = s.query(Enrollment).filter(Enrollment.campaign_id == camp.id, Enrollment.email == "kay@shehan.test").one()
+    assert dave.person.company.website == "https://trivillage.test" and not dave.needs_verification
+    assert kay.needs_verification
+    msgs = {m.step.position: m for m in s.query(Message).filter(Message.enrollment_id == dave.id)}
+    assert msgs[1].subject == "Your form" and msgs[1].body.startswith("Hi Dave,") and msgs[1].due_at.day in (1, 2)
+    assert msgs[2].body == "Hi Dave, again" and msgs[2].due_at.month == 11
+    assert s.query(AuditLog).filter(AuditLog.actor_label == "api: importer", AuditLog.action == "import").count() == 1
+
+    again = api.post(url, headers=h, json={"name": name, "csv": csv_text, "mapping": mapping}).get_json()
+    assert again["created"] == 0 and again["updated"] == 2 and again["new_campaign"] is False   # re-run is safe
+    s.expire_all()
+    assert s.query(Enrollment).filter(Enrollment.campaign_id == camp.id).count() == 2

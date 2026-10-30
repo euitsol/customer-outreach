@@ -228,6 +228,14 @@ def campaigns_get(sess, cid):
     return actions.get_campaign(sess, cid)
 
 
+@bp.route("/campaigns/import", methods=["POST"])
+@endpoint("write")
+def campaigns_import(sess):
+    b = body()
+    return actions.import_campaign(sess, g.api_actor, b.get("name"), b.get("csv"), b.get("mapping"),
+                                   bool(b.get("dry_run"))), 201
+
+
 @bp.route("/campaigns/<int:cid>/enrollments", methods=["POST"])
 @endpoint("write")
 def campaigns_enroll(sess, cid):
