@@ -4,7 +4,7 @@ import secrets
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, session as flask_session, url_for
 from markupsafe import Markup, escape
 
-from app import config, settings as app_settings
+from app import config, help as help_docs, settings as app_settings
 from app.clock import utcnow
 from app.db import init_db
 from app.queries import STATUS_LABELS
@@ -190,6 +190,7 @@ def inject():
     return {
         "auth_enabled": login_required(),
         "year": utcnow().year,
+        "help_slug": help_docs.slug_for(request.endpoint),
     }
 
 
@@ -202,6 +203,7 @@ def register():
     from app.views.deals import bp as deals_bp
     from app.views.enrollments import bp as enrollments_bp
     from app.views.imports import bp as imports_bp
+    from app.views.help import bp as help_bp
     from app.views.inbox import bp as inbox_bp
     from app.views.outbox import bp as outbox_bp
     from app.views.people import bp as people_bp
@@ -209,8 +211,8 @@ def register():
     from app.views.tracking import bp as tracking_bp
     from app.views.webhooks import bp as webhooks_bp
     from app.views.workspace import bp as workspace_bp
-    for b in (admin_bp, api_bp, campaigns_bp, companies_bp, dashboard_bp, deals_bp, enrollments_bp, imports_bp,
-              inbox_bp, outbox_bp, people_bp, tasks_bp, tracking_bp, webhooks_bp, workspace_bp):
+    for b in (admin_bp, api_bp, campaigns_bp, companies_bp, dashboard_bp, deals_bp, enrollments_bp, help_bp,
+              imports_bp, inbox_bp, outbox_bp, people_bp, tasks_bp, tracking_bp, webhooks_bp, workspace_bp):
         app.register_blueprint(b)
 
 

@@ -3,6 +3,9 @@
 Everything you can do in Outreach CRM, from first login to a won deal. No technical knowledge needed.
 (Setting up the server is in [OPERATIONS.md](OPERATIONS.md); connecting Claude in [MCP.md](MCP.md).)
 
+Every page of the app also has a **Help** button (bottom-right) that opens a short guide for that module
+in **English or বাংলা**; all guides are listed under *Help & guides* in the menu.
+
 - [1. The big picture](#1-the-big-picture)
 - [2. First-time setup (15 minutes)](#2-first-time-setup-15-minutes)
 - [3. People and companies](#3-people-and-companies)

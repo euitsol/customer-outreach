@@ -37,9 +37,10 @@ app/
   reply_checker.py     IMAP loop (replies, bounces, inbox logging)
   mcp_server.py        MCP server (stdio / streamable HTTP + bearer auth)
   manage.py            CLI (status, reset, seed, create-user, create-api-key)
+  help/                in-app documentation: <module>.{en,bn}.md pages + loader / endpoint -> page map
   web.py               Flask app, auth guard, CSRF, template filters, blueprints
   views/               one blueprint per area (people, companies, deals, tasks, inbox, enrollments,
-                       campaigns, outbox, imports, admin, workspace, api, webhooks, tracking, dashboard)
+                       campaigns, outbox, imports, admin, workspace, help, api, webhooks, tracking, dashboard)
 templates/, static/    server-rendered pages; app.js is progressive enhancement only
 tests/                 pytest suite (SQLite by default, Postgres via TEST_DATABASE_URL)
 ```
@@ -96,6 +97,12 @@ company by website domain / name → enroll (campaign mode) → per-stage overri
 * **A schema change**: see [DATABASE.md](DATABASE.md#migrations); keep
   `test_migrated_schema_matches_fresh_schema` green.
 
+* **A new page / module**: add `app/help/<slug>.en.md` and `<slug>.bn.md`, register the slug in
+  `MODULES` in `app/help/__init__.py` (menu group, main endpoint, endpoints it documents). The Help
+  button in `base.html` then appears on its pages. `tests/test_help.py` fails if a page has no help or a
+  language is missing. Pages are `# Title`, a one-line summary paragraph, then `##` sections; link to
+  other guides as `/help/<slug>`; indent nested lists by 4 spaces.
+
 ## Testing
 
 ```bash
@@ -104,4 +111,5 @@ TEST_DATABASE_URL=postgresql+psycopg2://u:p@host/empty .venv/bin/python -m pytes
 ```
 `tests/test_app.py` (campaign end-to-end with mocked SMTP), `test_crm.py` (CRM UI flows, WhatsApp
 webhooks, REST API, users, custom fields, CRM import), `test_mcp.py` (tools, permissions, HTTP auth),
-`test_migrations.py` (old schemas upgrade; migrated == fresh), `test_manage.py` (CLI).
+`test_migrations.py` (old schemas upgrade; migrated == fresh), `test_manage.py` (CLI),
+`test_help.py` (every module documented in English and Bengali, Help links on every page).

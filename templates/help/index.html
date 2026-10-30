@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ 'সাহায্য' if lang == 'bn' else 'Help' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>{{ 'সাহায্য ও নির্দেশিকা' if lang == 'bn' else 'Help & guides' }}</h1>
+    <div class="sub" lang="{{ lang }}">{{ 'প্রতিটি মডিউল কীভাবে কাজ করে, ধাপে ধাপে।' if lang == 'bn' else 'How every part of the CRM works, step by step.' }}</div></div>
+  <div class="page-actions">
+    <div class="seg" role="group" aria-label="Language">
+      {% for code, label in langs.items() %}<a class="{{ 'on' if code == lang }}" href="{{ url_for('help.index', lang=code) }}" lang="{{ code }}">{{ label }}</a>{% endfor %}
+    </div>
+  </div>
+</div>
+{% for labels, pages in groups %}
+<h2 class="help-group" lang="{{ lang }}">{{ labels[lang] }}</h2>
+<div class="help-grid">
+  {% for slug, doc in pages %}
+  <a class="card card-pad help-card" href="{{ url_for('help.page', slug=slug) }}" lang="{{ doc.lang }}">
+    <h3>{{ doc.title }}</h3>
+    <p class="muted small">{{ doc.summary }}</p>
+  </a>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

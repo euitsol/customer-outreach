@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ doc.title }} · {{ 'সাহায্য' if lang == 'bn' else 'Help' }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><div class="small muted"><a href="{{ url_for('help.index') }}">{{ icon('help') }} {{ 'সাহায্য' if lang == 'bn' else 'Help' }}</a></div>
+    <h1 lang="{{ doc.lang }}">{{ doc.title }}</h1></div>
+  <div class="page-actions">
+    <a class="btn" href="{{ open_url }}">{{ 'পেজটি খুলুন' if lang == 'bn' else 'Open this page' }}</a>
+    <div class="seg" role="group" aria-label="Language">
+      {% for code, label in langs.items() %}<a class="{{ 'on' if code == lang }}" href="{{ url_for('help.page', slug=slug, lang=code) }}" lang="{{ code }}">{{ label }}</a>{% endfor %}
+    </div>
+  </div>
+</div>
+{% if not translated %}
+<div class="banner">This page has not been translated into {{ langs[lang] }} yet. Showing the English version.</div>
+{% endif %}
+<div class="help-layout">
+  <article class="card card-pad doc" lang="{{ doc.lang }}">{{ doc.html }}
+    <div class="doc-nav">
+      {% if prev %}<a href="{{ url_for('help.page', slug=prev[0]) }}">&larr; {{ prev[1] }}</a>{% else %}<span></span>{% endif %}
+      {% if next %}<a href="{{ url_for('help.page', slug=next[0]) }}">{{ next[1] }} &rarr;</a>{% endif %}
+    </div>
+  </article>
+  {% if doc.sections %}
+  <aside class="doc-toc" lang="{{ doc.lang }}">
+    <div class="doc-toc-title">{{ 'এই পেজে' if lang == 'bn' else 'On this page' }}</div>
+    {% for id, name in doc.sections %}<a href="#{{ id }}">{{ name }}</a>{% endfor %}
+  </aside>
+  {% endif %}
+</div>
+{% endblock %}

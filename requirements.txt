@@ -9,3 +9,4 @@ phonenumbers==9.0.41
 httpx==0.28.1
 mcp==2.3.0
 uvicorn==0.54.0
+Markdown==3.7

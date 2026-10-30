@@ -392,3 +392,44 @@ details.fold[open] > summary { margin-bottom: 8px; }
 
 /* icons placed in headings / text get a text-sized default (buttons, nav, facts override it) */
 .main svg { width: 1.1em; height: 1.1em; vertical-align: -0.17em; flex: none; }
+
+/* in-app help: floating button, language switch, documentation pages */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; background: var(--card); }
+.seg a { padding: 6px 14px; color: var(--muted); font-weight: 600; }
+.seg a:hover { text-decoration: none; background: var(--card-2); }
+.seg a.on { background: var(--primary); color: var(--on-primary); }
+.help-fab { position: fixed; right: 18px; bottom: 18px; z-index: 20; display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border-radius: 99px; background: var(--card); border: 1px solid var(--border-strong); box-shadow: 0 4px 14px rgba(16,24,40,.18); font-weight: 650; }
+.help-fab > span { color: var(--text); }
+.help-fab a { padding: 3px 10px; border-radius: 99px; background: var(--primary-soft); color: var(--primary); }
+.help-fab a:hover { text-decoration: none; background: var(--primary); color: var(--on-primary); }
+.help-group { margin: 22px 0 10px; }
+.help-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.help-card { color: var(--text); }
+.help-card:hover { text-decoration: none; border-color: var(--primary); }
+.help-card p { margin: 6px 0 0; }
+.help-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: start; }
+.doc { max-width: 860px; font-size: 14.5px; line-height: 1.7; }
+.doc:lang(bn), .doc-toc:lang(bn), .help-card:lang(bn), h1:lang(bn) { font-family: "Noto Sans Bengali", "Nirmala UI", "Kohinoor Bangla", "Vrinda", sans-serif; }
+.doc:lang(bn) { line-height: 1.95; }
+.doc h2 { font-size: 18px; margin: 26px 0 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.doc h2:first-child, .doc h1 + h2 { border-top: 0; margin-top: 8px; }
+.doc h3 { font-size: 15px; margin: 18px 0 6px; }
+.doc h1 { display: none; }
+.doc p, .doc ul, .doc ol, .doc table, .doc pre, .doc blockquote { margin: 0 0 12px; }
+.doc ul, .doc ol { padding-left: 24px; }
+.doc li { margin: 3px 0; }
+.doc code { background: var(--card-2); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; }
+.doc pre { background: var(--card-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.doc pre code { background: none; border: 0; padding: 0; }
+.doc blockquote { border-left: 3px solid var(--primary); background: var(--primary-soft); border-radius: 0 8px 8px 0; padding: 8px 14px; }
+.doc blockquote p:last-child { margin: 0; }
+.doc table { border-collapse: collapse; display: block; overflow-x: auto; }
+.doc th, .doc td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; }
+.doc th { background: var(--card-2); font-size: 12.5px; }
+.doc-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--border); font-weight: 600; }
+.doc-toc { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.doc-toc a { color: var(--muted); padding: 3px 10px; border-left: 2px solid var(--border); }
+.doc-toc a:hover { color: var(--primary); border-color: var(--primary); text-decoration: none; }
+.doc-toc-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); padding: 0 10px 6px; }
+@media (max-width: 1100px) { .help-layout { grid-template-columns: minmax(0, 1fr); } .doc-toc { display: none; } }
+@media (max-width: 860px) { .help-fab { bottom: 12px; right: 12px; } }

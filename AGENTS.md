@@ -37,6 +37,7 @@ outside tests (any SQLite URL works for experiments).
 | Pages | `app/views/<area>.py` + `templates/<area>/` |
 | REST API | `app/views/api.py`; MCP tools `app/mcp_server.py` |
 | Merge fields | `app/merge.py` |
+| In-app help (English + Bengali) | `app/help/<slug>.{en,bn}.md`, registry in `app/help/__init__.py`, `app/views/help.py` |
 
 ## Invariants - do not break
 
@@ -81,7 +82,8 @@ outside tests (any SQLite URL works for experiments).
 
 Match the surrounding code: short docstrings stating intent, comments only for non-obvious reasons,
 `snake_case`, user-facing messages in plain English (flash messages, `ValueError` texts surface in the
-UI, API and MCP). Add or update tests with every behaviour change; update the relevant `docs/` page.
+UI, API and MCP). Add or update tests with every behaviour change; update the relevant `docs/` page and the in-app help
+(`app/help/`, both `en` and `bn`) of the module you touched.
 
 ## Using the CRM as an assistant (MCP)
 

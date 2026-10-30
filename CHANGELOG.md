@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **In-app help** in English and Bengali (বাংলা): a guide for every module under *Help & guides*, and a
+  **Help** button on every page (English / বাংলা) that opens the guide for the page you are on.
+  Pages are Markdown files in `app/help/` rendered with the new `Markdown` dependency.
+
 ## 2.0.0 - CRM (2026-10-25)
 
 The campaign manager became a full CRM. Upgrading is automatic on first start (see "Upgrade" below).

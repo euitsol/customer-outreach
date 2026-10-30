@@ -8,7 +8,7 @@
 <meta name="csrf" content="{{ csrf_token() }}">
 <meta name="robots" content="noindex,nofollow">
 <title>{% block title %}Outreach{% endblock %} · Outreach CRM</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=5">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v=6">
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
@@ -46,6 +46,7 @@
       <a href="{{ url_for('workspace.fields') }}" class="{{ 'active' if ep in ('workspace.fields', 'workspace.pipelines') }}">{{ icon('sliders') }} Fields &amp; pipelines</a>
       <a href="{{ url_for('workspace.users') }}" class="{{ 'active' if ep in ('workspace.users', 'workspace.api_keys', 'workspace.me') }}">{{ icon('key') }} Users &amp; API keys</a>
       <a href="{{ url_for('workspace.audit_log') }}" class="{{ 'active' if ep == 'workspace.audit_log' }}">{{ icon('shield') }} Audit log</a>
+      <a href="{{ url_for('help.index') }}" class="{{ 'active' if ep.startswith('help.') }}">{{ icon('help') }} Help &amp; guides</a>
     </nav>
     <div class="side-foot">
       <div class="row" style="justify-content:space-between">
@@ -64,6 +65,11 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  {% if help_slug %}
+  <div class="help-fab"><span>{{ icon('help') }} Help</span>
+    <a href="{{ url_for('help.page', slug=help_slug, lang='en') }}" lang="en">English</a>
+    <a href="{{ url_for('help.page', slug=help_slug, lang='bn') }}" lang="bn">বাংলা</a></div>
+  {% endif %}
 </div>
 <script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
 {% block scripts %}{% endblock %}
