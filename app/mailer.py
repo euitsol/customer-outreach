@@ -13,6 +13,8 @@ from app.models import ClickLink
 
 DEFAULT_FOOTER = "Don't want further emails from us?"
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
+# A bare URL, or <a href="https://...">visible text</a> (a link with its own wording, e.g. a phone number).
+LINK_RE = re.compile(r"<a\s+href=\"(https?://[^\"\s<>]+)\"\s*>([^<]{1,200})</a>|" + URL_RE.pattern, re.I)
 TRAILING = ".,;:!?)]}"
 
 
@@ -47,22 +49,35 @@ def _link_token(session, enrollment_id, stage, url):
     return f"{config.TRACK_BASE_URL}/t/c/{token}"
 
 
+def _links(text_body, link):
+    """(plain, html) of the body text. Bare URLs and <a href="url">label</a> become links; link(url)
+    returns the address to use (the tracked one when click tracking is on). Everything else is escaped."""
+    plain, parts, last = [], [], 0
+    for m in LINK_RE.finditer(text_body):
+        if m.group(1):
+            url, label, tail = m.group(1), m.group(2).strip(), ""
+        else:
+            url, tail = _split_url(m.group(0))
+            label = url
+        shown = link(url)
+        plain.append(text_body[last:m.start()] + (shown if label == url else f"{label} ({shown})") + tail)
+        parts.append(html.escape(text_body[last:m.start()]) +
+                     f'<a href="{html.escape(shown)}">{html.escape(label)}</a>' + html.escape(tail))
+        last = m.end()
+    plain.append(text_body[last:])
+    parts.append(html.escape(text_body[last:]))
+    return "".join(plain), "".join(parts).replace("\r\n", "\n").replace("\n", "<br>\n")
+
+
 def simple_bodies(body_text, signature=""):
     """(plain, html) for a one-to-one email: no tracking, no unsubscribe footer."""
     text_body = (body_text or "").rstrip()
     sig = (signature or "").strip()
     if sig:
         text_body += ("\n" if text_body.endswith(",") else "\n\n") + sig
-    parts, last = [], 0
-    for m in URL_RE.finditer(text_body):
-        url, tail = _split_url(m.group(0))
-        parts.append(html.escape(text_body[last:m.start()]) + f'<a href="{html.escape(url)}">{html.escape(url)}</a>'
-                     + html.escape(tail))
-        last = m.end()
-    parts.append(html.escape(text_body[last:]))
-    body_html = "".join(parts).replace("\r\n", "\n").replace("\n", "<br>\n")
-    return text_body, ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;'
-                       f'color:#222">{body_html}</div>')
+    plain, body_html = _links(text_body, lambda url: url)
+    return plain, ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;'
+                   f'color:#222">{body_html}</div>')
 
 
 def prepare_bodies(session, body_text, enrollment_id, stage, open_token, unsub_token, opts):
@@ -74,18 +89,8 @@ def prepare_bodies(session, body_text, enrollment_id, stage, open_token, unsub_t
         # directly under a sign-off such as "Best regards," otherwise after a blank line
         text_body += ("\n" if text_body.endswith(",") else "\n\n") + sig
 
-    plain_parts, html_parts, last = [], [], 0
-    for m in URL_RE.finditer(text_body):
-        url, tail = _split_url(m.group(0))
-        shown = _link_token(session, enrollment_id, stage, url) if track_clicks else url
-        plain_parts.append(text_body[last:m.start()] + shown + tail)
-        html_parts.append(html.escape(text_body[last:m.start()]) +
-                          f'<a href="{html.escape(shown)}">{html.escape(url)}</a>' + html.escape(tail))
-        last = m.end()
-    plain_parts.append(text_body[last:])
-    html_parts.append(html.escape(text_body[last:]))
-    plain = "".join(plain_parts)
-    html_body = "".join(html_parts).replace("\r\n", "\n").replace("\n", "<br>\n")
+    plain, html_body = _links(
+        text_body, lambda url: _link_token(session, enrollment_id, stage, url) if track_clicks else url)
 
     unsub_url = f"{config.TRACK_BASE_URL}/t/u/{unsub_token}"
     footer_html = footer_plain = ""

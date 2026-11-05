@@ -492,3 +492,17 @@ def test_migration_adds_the_env_mailbox_and_keeps_the_reply_position(tmp_path):
     assert (env.imap_last_uid, env.imap_uidvalidity) == ("55", "9")
     assert "mailbox_id" in {c["name"] for c in inspect(engine).get_columns("messages")}
     assert "mailbox_ids" in {c["name"] for c in inspect(engine).get_columns("campaigns")}
+
+
+# ---------------------------------------------------------------------- labelled links in email bodies
+
+def test_labelled_links_become_anchors_and_other_markup_is_escaped():
+    url = "https://api.whatsapp.com/send/?phone=1&text=Hi&type=phone_number"
+    body = f'Hi <b>Ann</b>, WhatsApp <a href="{url}">+353 86 821 9885</a> or https://euitsols.com/x.\n<a href="javascript:x">no</a>'
+    plain, html_body = mailer._links(body, lambda u: u)
+    assert f'<a href="{url.replace("&", "&amp;")}">+353 86 821 9885</a>' in html_body
+    assert '<a href="https://euitsols.com/x">https://euitsols.com/x</a>.' in html_body
+    assert "&lt;b&gt;" in html_body and "&lt;a href=&quot;javascript:x" in html_body
+    assert f"+353 86 821 9885 ({url})" in plain
+    tracked, _ = mailer._links(body, lambda u: "https://t.test/c/1")
+    assert "+353 86 821 9885 (https://t.test/c/1)" in tracked
