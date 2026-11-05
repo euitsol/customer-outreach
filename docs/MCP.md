@@ -73,7 +73,8 @@ The server must be reachable over HTTPS.
 | `enroll_in_campaign` | write | Add people (ids or emails) to a sequence |
 | `set_campaign_status` | **send** | Start / pause / archive a campaign |
 | `list_conversations`, `get_conversation` | read | Inbox threads and messages; WhatsApp 24h window status |
-| `send_message` | **send** | Email or WhatsApp a person now (respects opt-outs, do-not-contact, 24h rule) |
+| `send_message` | **send** | Email or WhatsApp a person now (respects opt-outs, do-not-contact, 24h rule). Optional `mailbox_id` picks the sending mailbox |
+| `list_mailboxes` | read | Sending mailboxes with id, status, daily limit and sent today (no passwords) |
 
 Prompts: **daily_briefing** (read-only morning summary) and **account_research** (look up an account,
 log a summary note, propose a next step).

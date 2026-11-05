@@ -65,8 +65,9 @@ Three rules hold everywhere:
    the **owner**. Sign out and back in with your email. Your name now appears on notes and records
    you create, and records can be assigned to you.
 3. **Check sending**: *Workspace > Sending settings*.
-   - *SMTP test*: send yourself a test email.
+   - *SMTP test*: send yourself a test email (choose the mailbox when you have several).
    - *IMAP test*: confirms replies and bounces will be detected.
+   - Add more sending mailboxes under *Workspace > Mailboxes*, then tick the ones a campaign may use in its *Settings > Send from*.
    - Set **delay between emails**, **daily limit**, optional **send window** (e.g. 08:00-18:00 weekdays)
      and your **signature** and **unsubscribe footer**.
 4. **Optional - WhatsApp**: *Workspace > Integrations > WhatsApp Business > How to connect* (an admin

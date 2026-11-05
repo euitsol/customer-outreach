@@ -18,9 +18,9 @@ import sys
 from sqlalchemy import inspect, text
 
 from app.clock import utcnow
-from app.migrations import ops, v0001_baseline, v0002_crm
+from app.migrations import ops, v0001_baseline, v0002_crm, v0003_mailboxes
 
-MIGRATIONS = [v0001_baseline, v0002_crm]
+MIGRATIONS = [v0001_baseline, v0002_crm, v0003_mailboxes]
 LOCK_ID = 727301
 
 
@@ -150,6 +150,7 @@ def ensure_defaults(conn):
             kind="email", name="Email (SMTP)", address=config.SENDER_EMAIL or None, external_id=None,
             config={"smtp_host": config.SMTP_HOST, "imap_host": config.IMAP_HOST or ""},
             status="active" if config.SMTP_HOST else "disabled", is_default=True, created_at=now, updated_at=now))
+    _ensure_env_mailbox(conn, t["mailboxes"], now)
     if config.WHATSAPP_PHONE_NUMBER_ID and not conn.execute(
             text("SELECT 1 FROM channel_accounts WHERE kind = 'whatsapp' AND external_id = :e"),
             {"e": config.WHATSAPP_PHONE_NUMBER_ID}).first():
@@ -161,3 +162,27 @@ def ensure_defaults(conn):
             status="active" if config.WHATSAPP_TOKEN else "disabled",
             is_default=not conn.execute(text("SELECT 1 FROM channel_accounts WHERE kind = 'whatsapp'")).first(),
             created_at=now, updated_at=now))
+
+
+def _ensure_env_mailbox(conn, mb, now):
+    """The SMTP/IMAP account from .env is a mailbox row too (flagged from_env; its passwords stay in .env)."""
+    from sqlalchemy import select, update
+    from app import config
+    if not config.SMTP_HOST:
+        return
+    email = (config.SENDER_EMAIL or config.SMTP_USER or "").strip().lower()
+    if not email:
+        return
+    row = conn.execute(select(mb.c.id, mb.c.email).where(mb.c.from_env == True)).first()  # noqa: E712
+    taken = conn.execute(select(mb.c.id).where(mb.c.email == email)).first()
+    if row is None:
+        if taken:
+            return
+        state = {k: conn.execute(text("SELECT value FROM settings WHERE key = :k"), {"k": k}).scalar()
+                 for k in ("imap_last_uid", "imap_uidvalidity")}        # keep the reply checker's position
+        conn.execute(mb.insert().values(
+            name="Default mailbox", email=email, status="active", from_env=True,
+            imap_last_uid=state["imap_last_uid"], imap_uidvalidity=state["imap_uidvalidity"],
+            created_at=now, updated_at=now))
+    elif row.email != email and not taken:
+        conn.execute(update(mb).where(mb.c.id == row.id).values(email=email, updated_at=now))

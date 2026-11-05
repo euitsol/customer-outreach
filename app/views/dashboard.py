@@ -4,7 +4,7 @@ from flask import Blueprint, render_template
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from app import config, mailer, settings as app_settings
+from app import mailboxes, settings as app_settings
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.crm import activities as activities_svc, conversations as conv_svc, deals as deals_svc
@@ -30,8 +30,9 @@ def service_health(s):
     worker_age = _age(app_settings.get_raw(sess, "worker_heartbeat"))
     reply_age = _age(app_settings.get_raw(sess, "reply_heartbeat"))
     return {
-        "smtp_configured": mailer.smtp_configured(),
-        "imap_configured": bool(config.IMAP_HOST and config.IMAP_USER),
+        "smtp_configured": mailboxes.ready(sess),
+        "imap_configured": any(mailboxes.imap_creds(m) for m in mailboxes.usable(sess)),
+        "mailboxes": len(mailboxes.usable(sess)),
         "whatsapp_configured": whatsapp.configured(),
         "worker_alive": worker_age is not None and worker_age < max(300, s["poll_interval"] * 3 + 600),
         "worker_status": app_settings.get_raw(sess, "worker_status", "No heartbeat yet"),

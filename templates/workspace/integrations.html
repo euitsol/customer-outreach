@@ -2,16 +2,15 @@
 {% from "_macros.html" import icon, pill, csrf_field %}
 {% block title %}Integrations{% endblock %}
 {% block content %}
-<div class="page-head"><div><h1>Workspace</h1><div class="sub">Channels this CRM sends and receives on. Secrets live in the server's <code>.env</code>; this page shows their status.</div></div></div>
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Channels this CRM sends and receives on. Email mailboxes are managed on the Mailboxes tab; WhatsApp and Claude secrets live in the server's <code>.env</code>.</div></div></div>
 {% include "workspace/_tabs.html" %}
 <div class="grid g2" style="align-items:start">
   <div class="card card-pad">
     <div class="section-title"><h2>{{ icon('mail') }} Email (SMTP + IMAP)</h2>{{ pill('active' if smtp_ok else 'failed', 'Connected' if smtp_ok else 'Not configured') }}</div>
     <dl class="kv">
-      <dt>Sending</dt><dd>{{ config.SMTP_HOST or '-' }}{% if config.SMTP_HOST %}:{{ config.SMTP_PORT }}{% endif %} as {{ config.SENDER_EMAIL or '-' }}</dd>
-      <dt>Replies</dt><dd>{{ config.IMAP_HOST or 'IMAP not configured' }}</dd>
+      <dt>Mailboxes</dt><dd>{{ mailbox_count }} active</dd>
     </dl>
-    <p class="small muted mt1">Campaign emails, one-to-one emails from People and the Inbox go out through this account. Replies are matched to people and land in the Inbox. Configure <code>SMTP_*</code> / <code>IMAP_*</code> in <code>.env</code>; test from <a href="{{ url_for('admin.settings') }}">Sending settings</a>.</p>
+    <p class="small muted mt1">Campaign emails and one-to-one emails from People and the Inbox go out through your mailboxes. Replies are matched to people and land in the Inbox. Add, test and switch mailboxes on the <a href="{{ url_for('workspace.mailboxes') }}">Mailboxes</a> tab.</p>
   </div>
 
   <div class="card card-pad">

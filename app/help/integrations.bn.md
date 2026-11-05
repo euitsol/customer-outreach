@@ -4,7 +4,7 @@
 
 ## কার্ডগুলো
 
-* **Email (SMTP + IMAP)**: Connected বা Not configured দেখায়। সার্ভার সেটিংস `.env` ফাইল থেকে আসে; [Sending settings](/help/settings)-এ পরীক্ষা করুন।
+* **Email (SMTP + IMAP)**: Connected বা Not configured এবং কয়টি মেইলবক্স সক্রিয় তা দেখায়। মেইলবক্স যোগ ও পরীক্ষা করুন [Mailboxes](/help/mailboxes)-এ।
 * **WhatsApp Business**: Connected বা Not connected দেখায়। কার্ডে **How to connect**, Meta-তে বসানোর webhook URL এবং টেস্ট পাঠানোর সুবিধা আছে। একজন admin `.env`-এ চারটি মান বসান।
 * **Claude (MCP server)**: কতগুলো API key সক্রিয় এবং কীভাবে সংযুক্ত হবেন। দেখুন [API keys & Claude](/help/api-keys)।
 * **REST API**: base ঠিকানা এবং key পেজের লিংক।

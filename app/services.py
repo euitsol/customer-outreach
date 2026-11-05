@@ -372,6 +372,7 @@ def duplicate_campaign(session, campaign, new_name):
         daily_limit=campaign.daily_limit, min_delay=campaign.min_delay, max_delay=campaign.max_delay,
         track_opens=campaign.track_opens, track_clicks=campaign.track_clicks,
         sender_name=campaign.sender_name, reply_to=campaign.reply_to, owner_id=campaign.owner_id,
+        mailbox_ids=list(campaign.mailbox_ids or []),
     )
     session.add(new)
     session.flush()

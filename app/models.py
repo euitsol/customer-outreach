@@ -375,6 +375,35 @@ class ChannelAccount(Base):
     __table_args__ = (UniqueConstraint("kind", "external_id", name="uq_channel_accounts_kind_external"),)
 
 
+class Mailbox(Base):
+    """A mailbox that sends email over SMTP and, if IMAP is set, is watched for replies and bounces.
+
+    Any number can be active; a campaign picks which ones it rotates through. The row flagged
+    `from_env` uses the SMTP_* / IMAP_* values from .env instead of its own credentials. Passwords of
+    the other rows are stored here and never shown again (see app.mailboxes).
+    """
+    __tablename__ = "mailboxes"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    email = Column(String(320), nullable=False, unique=True)          # From address, lower case
+    smtp_host = Column(String(300))
+    smtp_port = Column(Integer, default=587)
+    smtp_user = Column(String(320))                                   # blank = the email address
+    smtp_password = Column(Text)
+    imap_host = Column(String(300))                                   # blank = replies not watched
+    imap_port = Column(Integer, default=993)
+    imap_user = Column(String(320))                                   # blank = the SMTP user
+    imap_password = Column(Text)                                      # blank = the SMTP password
+    daily_limit = Column(Integer)                                     # emails per day from this mailbox (None = no limit)
+    status = Column(String(20), nullable=False, default="active")     # active | disabled
+    from_env = Column(Boolean, nullable=False, default=False)
+    imap_last_uid = Column(String(40))
+    imap_uidvalidity = Column(String(100))
+    reply_status = Column(String(500))
+    created_at = _created()
+    updated_at = _updated()
+
+
 class Conversation(Base):
     """A thread with one person on one channel (the shared inbox)."""
     __tablename__ = "conversations"
@@ -468,6 +497,7 @@ class Campaign(Base):
     track_clicks = Column(Boolean, default=True)
     sender_name = Column(String(200), nullable=True)
     reply_to = Column(String(300), nullable=True)
+    mailbox_ids = Column(JSONList)                      # mailboxes this campaign rotates through (empty = the default one)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
     created_at = Column(DateTime, server_default=func.now())
     updated_at = _updated()
@@ -596,6 +626,8 @@ class Message(Base):
     next_attempt_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     message_id = Column(String(300), index=True)        # RFC Message-ID (reply matching)
+    # Sent from. No index on purpose: released migration v0002 builds this table's model indexes.
+    mailbox_id = Column(Integer, ForeignKey("mailboxes.id", ondelete="SET NULL"))
     sent_subject = Column(Text)                         # exact snapshot of what went out
     sent_body = Column(Text)
     open_token = Column(String(64), index=True)

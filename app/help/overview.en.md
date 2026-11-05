@@ -39,7 +39,7 @@ Company ── People ──┬── Emails / phones / WhatsApp numbers   (how 
 
 1. **Sign in** with the admin login from the server's `.env` file.
 2. **Create your own user** under *Workspace > Users & API keys*. The first user becomes the owner.
-3. **Check sending** under *Sending settings*: send a test email, run the IMAP test, set your delays, daily limit, signature and unsubscribe footer.
+3. **Check sending**: under *Workspace > Mailboxes* add your mailbox(es) and send a test email; under *Sending settings* set your delays, daily limit, signature and unsubscribe footer.
 4. **Optional:** connect WhatsApp ([Integrations](/help/integrations)), add custom fields and edit your sales stages ([Fields & pipelines](/help/fields)).
 
 ## Finding help

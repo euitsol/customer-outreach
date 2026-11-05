@@ -27,7 +27,8 @@ app/
   channels/            delivery adapters
     __init__.py        channel account lookup / status
     whatsapp.py        Meta Cloud API: send text / template, webhook verify / signature / parse
-  mailer.py            SMTP: build MIME, tracking (pixel, links, unsubscribe), deliver
+  mailer.py            SMTP: build MIME, tracking (pixel, links, unsubscribe), deliver through one mailbox
+  mailboxes.py         sending mailboxes: credentials, rotation per campaign, sticky follow-ups, daily limits, panel save/test
   services.py          outreach domain: enroll, scheduling, queue / retry / skip, suppression, unsubscribe
   sender.py            render + send one campaign stage, bounce handling, link into the inbox
   merge.py             {{merge_fields}} context (person, company, custom fields, campaign variables)
@@ -53,8 +54,8 @@ point behaves the same (dedupe, consent, audit, WhatsApp window...).
 
 **Campaign send** (`worker.run_cycle`): settings (paused? window? daily cap?) → `pick_manual` (queued
 messages) else `pick_auto` (due enrollment in an active campaign that is sendable, not suppressed, email
-consent OK, not blocked by retries) → `sender.send_stage` renders merge fields, adds tracking, delivers
-over SMTP → on success: message `sent`, enrollment stage advances, `events(sent)`, conversation message
+consent OK, not blocked by retries, campaign has a mailbox with room) → `sender.send_stage` picks the mailbox
+(`mailboxes.choose`), renders merge fields, adds tracking, delivers over that mailbox's SMTP → on success: message `sent`, enrollment stage advances, `events(sent)`, conversation message
 linked to the person's email thread, next due time recomputed → sleep a random delay.
 
 **Reply / bounce** (`reply_checker.handle_message`): own mail ignored; bounces mark enrollments, contact

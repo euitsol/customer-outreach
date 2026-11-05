@@ -14,7 +14,7 @@ The dashboard summarises the whole CRM on one page so you can decide what to do 
 * **Campaign email, last 14 days**: a chart of what was sent, opened and replied to.
 * **Campaigns**: each campaign with its status and progress. If there are none, a button creates your first one.
 * **Next up**: the next emails due from active campaigns.
-* **System**: whether sending is switched on, SMTP is configured and the worker is alive.
+* **System**: whether sending is switched on, how many mailboxes are active and whether the worker is alive.
 * **Enrollments** and **Recent email activity**: the latest movement, with links to the full lists.
 
 ## How to use it

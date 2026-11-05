@@ -1,5 +1,4 @@
 import hmac
-import imaplib
 import time
 from zoneinfo import ZoneInfo, available_timezones
 
@@ -9,10 +8,10 @@ from flask import (
 from sqlalchemy import func, text
 from werkzeug.security import check_password_hash
 
-from app import config, mailer, settings as app_settings
+from app import config, mailboxes, settings as app_settings
 from app.clock import utcnow
 from app.mailer import SendError
-from app.models import Suppression, Tag, Template, User, company_tags, person_tags
+from app.models import Mailbox, Suppression, Tag, Template, User, company_tags, person_tags
 from app.services import EMAIL_RE, add_suppression
 from app.views.common import db, err, form_bool, get_or_404, int_arg, ok, paginate, safe_next, settings_now
 
@@ -140,44 +139,50 @@ def settings():
     from app.views.dashboard import service_health
     zones = sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/", "US/")))
     return render_template("settings.html", s=s, zones=zones, health=service_health(s), config=config,
-                           smtp_ok=mailer.smtp_configured())
+                           boxes=sess.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id).all(),
+                           smtp_ok=mailboxes.ready(sess))
+
+
+def _test_mailbox():
+    """Mailbox picked in the test form (default: the first one that can send) and where to go afterwards."""
+    sess = db()
+    back_to = url_for("workspace.mailboxes") if request.form.get("next") == "mailboxes" else url_for("admin.settings")
+    mb = sess.get(Mailbox, int_arg("mailbox_id", 0, request.form) or 0) or mailboxes.default_mailbox(sess) \
+        or sess.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id).first()
+    return mb, back_to
 
 
 @bp.route("/settings/test-smtp", methods=["POST"])
 def test_smtp():
     to = (request.form.get("to") or "").strip()
-    if not mailer.smtp_configured():
-        err("SMTP_HOST / SMTP_USER / SMTP_PASSWORD are not set in the server's .env file.")
-        return redirect(url_for("admin.settings"))
+    mb, back_to = _test_mailbox()
+    if mb is None or not mailboxes.smtp_creds(mb):
+        err("No mailbox with SMTP settings yet: add one under Workspace > Mailboxes "
+            "(or set SMTP_HOST / SMTP_USER / SMTP_PASSWORD in the server's .env file).")
+        return redirect(back_to)
     if not EMAIL_RE.match(to):
         err("Enter an email address to send the test message to.")
-        return redirect(url_for("admin.settings"))
-    s = settings_now()
-    msg, _ = mailer.build_message(
-        to_email=to, to_name="", subject="Test email from your outreach panel",
-        plain="If you can read this, SMTP sending works.", html_doc="<p>If you can read this, SMTP sending works.</p>",
-        sender_name=s["sender_name"], reply_to=s["reply_to"] or None)
+        return redirect(back_to)
     try:
-        mailer.deliver(msg, to)
-        ok(f"Test email sent to {to}.")
+        mailboxes.send_test(mb, to, settings_now())
+        ok(f"Test email sent to {to} from {mb.email}.")
     except SendError as e:
-        err(f"SMTP test failed: {e}")
-    return redirect(url_for("admin.settings"))
+        err(f"SMTP test failed for {mb.email}: {e}")
+    return redirect(back_to)
 
 
 @bp.route("/settings/test-imap", methods=["POST"])
 def test_imap():
-    if not (config.IMAP_HOST and config.IMAP_USER):
-        err("IMAP_HOST / IMAP_USER are not set in the server's .env file.")
-    else:
-        try:
-            imap = imaplib.IMAP4_SSL(config.IMAP_HOST, config.IMAP_PORT, timeout=10)
-            imap.login(config.IMAP_USER, config.IMAP_PASSWORD)
-            imap.logout()
-            ok("IMAP login works. Replies and bounces will be detected.")
-        except Exception as e:
-            err(f"IMAP test failed: {e}")
-    return redirect(url_for("admin.settings"))
+    mb, back_to = _test_mailbox()
+    if mb is None:
+        err("No mailbox yet: add one under Workspace > Mailboxes.")
+        return redirect(back_to)
+    try:
+        mailboxes.test_imap(mb)
+        ok(f"IMAP login works for {mb.email}. Replies and bounces will be detected.")
+    except Exception as e:
+        err(f"IMAP test failed for {mb.email}: {e}")
+    return redirect(back_to)
 
 
 # ------------------------------------------------------------------ tags

@@ -2,7 +2,7 @@
 from flask import Blueprint, redirect, render_template, request, url_for
 from sqlalchemy.orm import selectinload
 
-from app import mailer
+from app import mailboxes, mailer
 from app.channels import whatsapp
 from app.crm import conversations as conv_svc
 from app.models import Conversation, ConversationMessage, Template, User
@@ -46,11 +46,12 @@ def index():
                 last[cid] = mid
         msgs = {m.id: m for m in sess.query(ConversationMessage).filter(ConversationMessage.id.in_(list(last.values())))}
         last = {cid: msgs.get(mid) for cid, mid in last.items()}
+    boxes = mailboxes.usable(sess)
     return render_template(
         "inbox/index.html", page=page, current=current, thread=thread, last=last, status=status, channel=channel,
         filters=FILTERS, mine=mine, users=sess.query(User).filter(User.is_active == True).all(),  # noqa: E712
         wa_window=conv_svc.whatsapp_window_open(current) if current is not None and current.channel == "whatsapp" else None,
-        channels={"email": mailer.smtp_configured(), "whatsapp": whatsapp.configured()},
+        channels={"email": bool(boxes), "whatsapp": whatsapp.configured()}, mailboxes=boxes,
         templates=sess.query(Template).order_by(Template.name).all())
 
 
@@ -64,7 +65,8 @@ def reply(conversation_id):
         conv_svc.send(sess, conv.person, conv.channel, request.form.get("body"), subject=request.form.get("subject"),
                       conversation=conv, user=current_user(), actor=actor(), template=template,
                       template_language=(request.form.get("wa_language") or "en_US").strip(),
-                      template_params=params, settings=settings_now())
+                      template_params=params, settings=settings_now(),
+                      mailbox_id=int_arg("mailbox_id", None, request.form))
         if request.form.get("close") == "1":
             conv_svc.set_status(sess, conv, "closed", actor())
         sess.commit()

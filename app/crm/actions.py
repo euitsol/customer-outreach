@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import selectinload
 
-from app import importer, mailer, settings as app_settings
+from app import importer, mailboxes, mailer, settings as app_settings
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.crm import (
@@ -20,7 +20,7 @@ from app.crm import (
     custom_fields as cf_svc, deals as deals_svc, people as people_svc, serialize as ser,
 )
 from app.models import (
-    Activity, Campaign, Company, Conversation, ConversationMessage, Deal, Enrollment, Person, Pipeline,
+    Activity, Campaign, Company, Conversation, ConversationMessage, Deal, Enrollment, Mailbox, Person, Pipeline,
     PipelineStage, Tag, Task, person_tags,
 )
 from app.queries import campaign_summaries, engagement_stats, stage_stats, status_counts
@@ -471,14 +471,25 @@ def get_conversation(session, conversation_id, limit=50, mark_read=False):
     return out
 
 
+def list_mailboxes(session):
+    """Sending mailboxes (never their passwords) and how many emails each sent today."""
+    counts = mailboxes.sent_today(session, app_settings.load(session))
+    return [mailboxes.public(m, counts) for m in session.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id)]
+
+
 def send_message(session, actor, person_id, channel, body=None, subject=None, conversation_id=None,
-                 template=None, template_language="en_US", template_params=None):
+                 template=None, template_language="en_US", template_params=None, mailbox_id=None):
     p = _get(session, Person, person_id, "Person")
     conv = _get(session, Conversation, conversation_id, "Conversation") if conversation_id else None
     try:
+        mailbox_id = int(mailbox_id) if mailbox_id else None
+    except (TypeError, ValueError):
+        raise ValueError("mailbox_id must be the number of a mailbox (see list_mailboxes).")
+    try:
         m = conv_svc.send(session, p, channel, body, subject=subject, conversation=conv, actor=actor,
                           template=template, template_language=template_language,
-                          template_params=template_params, settings=app_settings.load(session))
+                          template_params=template_params, settings=app_settings.load(session),
+                          mailbox_id=mailbox_id)
     except conv_svc.SendBlocked as e:
         raise ValueError(str(e))
     except (mailer.SendError, whatsapp.WhatsAppError) as e:

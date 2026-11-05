@@ -42,7 +42,7 @@ def post(client, url, **data):
 @pytest.fixture
 def sent(monkeypatch):
     out = []
-    monkeypatch.setattr(mailer, "deliver", lambda msg, to: out.append((to, message_from_string(msg.as_string()))))
+    monkeypatch.setattr(mailer, "deliver", lambda msg, to, mailbox=None: out.append((to, message_from_string(msg.as_string()))))
     return out
 
 

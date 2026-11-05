@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from sqlalchemy import func
 
-from app import config, mailer, settings as app_settings
+from app import mailboxes, mailer, settings as app_settings
 from app.channels import account_for, whatsapp
 from app.clock import utcnow
 from app.crm import audit, normalize, people as people_svc
@@ -191,14 +191,14 @@ def record_email_inbound(session, person, *, subject, body, message_id, in_reply
     return msg
 
 
-def record_campaign_email(session, enrollment, message, subject, external_id, when):
+def record_campaign_email(session, enrollment, message, subject, external_id, when, sender=None):
     """Link a sent campaign email into the person's email thread (body stays on the sequence message)."""
     person = enrollment.person
     if person is None:
         return None
     conv = get_or_create(session, person, "email", subject=subject, thread_id=enrollment.message_id)
     m, _ = add_message(session, conv, direction="out", subject=subject, recipient=enrollment.email, status="sent",
-                       external_id=external_id, sequence_message_id=message.id, when=when,
+                       sender=sender, external_id=external_id, sequence_message_id=message.id, when=when,
                        meta={"campaign_id": enrollment.campaign_id, "stage": message.position})
     people_svc.touch(person, when, contacted=True)
     return m
@@ -212,9 +212,10 @@ def whatsapp_window_open(conv, now=None):
 
 
 def send(session, person, channel, body, *, subject=None, conversation=None, user=None, actor=None,
-         template=None, template_language="en_US", template_params=None, settings=None):
+         template=None, template_language="en_US", template_params=None, settings=None, mailbox_id=None):
     """Send a one-to-one message now and record it. Raises SendBlocked / mailer.SendError /
-    whatsapp.WhatsAppError. A failed attempt is still recorded (status failed) before re-raising."""
+    whatsapp.WhatsAppError. A failed attempt is still recorded (status failed) before re-raising.
+    Email goes out from `mailbox_id`, else the mailbox that last wrote in this thread, else the default."""
     if person.do_not_contact:
         raise SendBlocked(f"{person.display_name} is marked do-not-contact.")
     if people_svc.consent_status(session, person, channel) == "revoked":
@@ -242,19 +243,26 @@ def send(session, person, channel, body, *, subject=None, conversation=None, use
         if not subj:
             base = (last_in.subject if last_in and last_in.subject else conv.subject) or ""
             subj = base if base.lower().startswith("re:") or not base else f"Re: {base}"
+        try:
+            mailbox = mailboxes.for_conversation(session, conv, mailbox_id)
+        except ValueError as e:
+            raise SendBlocked(str(e))
+        if mailbox is None:
+            raise SendBlocked("No mailbox is set up for sending email. Add one under Workspace > Mailboxes.")
         plain, html_doc = mailer.simple_bodies(body, s["signature"])
         msg, new_id = mailer.build_message(
             to_email=person.email, to_name=person.full_name, subject=subj, plain=plain, html_doc=html_doc,
-            sender_name=s["sender_name"], reply_to=s["reply_to"] or None,
+            sender_name=s["sender_name"], reply_to=s["reply_to"] or None, from_email=mailbox.email,
             in_reply_to=last_in.external_id if last_in else None)
         try:
-            mailer.deliver(msg, person.email)
+            mailer.deliver(msg, person.email, mailbox)
         except mailer.SendError as e:
             add_message(session, conv, direction="out", body=body, subject=subj, recipient=person.email,
-                        status="failed", error=str(e)[:1000], user_id=user.id if user else None, when=now)
+                        sender=mailbox.email, status="failed", error=str(e)[:1000],
+                        user_id=user.id if user else None, when=now)
             raise
         m, _ = add_message(session, conv, direction="out", body=body, subject=subj, recipient=person.email,
-                           sender=config.SENDER_EMAIL, status="sent", external_id=new_id,
+                           sender=mailbox.email, status="sent", external_id=new_id,
                            user_id=user.id if user else None, when=now)
         if not conv.subject:
             conv.subject = subj[:500]

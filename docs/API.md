@@ -50,10 +50,15 @@ Dates: ISO 8601, UTC (`2026-11-03T09:30`, `2026-11-03`). List endpoints take `li
 | PATCH | `/people/<id>` | write | Any of the POST fields, plus `do_not_contact`, `company_id`, `tags[]` (replace), `add_tags[]`, `remove_tags[]`; returns `{person, changed[]}` |
 | DELETE | `/people/<id>` | write | Deletes the person and their history |
 | POST | `/people/<id>/merge` | write | `{"other_id": 34}` - folds 34 into `<id>` |
-| POST | `/people/<id>/messages` | send | `channel: email|whatsapp, body, subject?, conversation_id?, template?, template_language?, template_params[]?` |
+| POST | `/people/<id>/messages` | send | `channel: email|whatsapp, body, subject?, conversation_id?, template?, template_language?, template_params[]?, mailbox_id?` (email goes out from the thread's last mailbox unless `mailbox_id` is given) |
 
 `lifecycle_stage`: subscriber, lead, mql, sql, opportunity, customer, evangelist, other.
 `lead_status`: new, open, in_progress, contacted, qualified, unqualified, bad_timing.
+
+### Mailboxes
+| Method | Path | Scope | Notes |
+|---|---|---|---|
+| GET | `/mailboxes` | read | Sending mailboxes: `id, name, email, status, can_send, reads_replies, daily_limit, sent_today`. Never any password; mailboxes are created in the panel |
 
 ### Companies
 | Method | Path | Scope | Body / query |
@@ -93,7 +98,7 @@ Dates: ISO 8601, UTC (`2026-11-03T09:30`, `2026-11-03`). List endpoints take `li
 |---|---|---|---|
 | GET | `/conversations` | read | `status (open|unread|pending|closed|all), channel, person_id, limit` |
 | GET | `/conversations/<id>` | read | Messages (incl. campaign emails), `whatsapp_window_open` |
-| POST | `/conversations/<id>/messages` | send | `body, subject?, template?, template_language?, template_params[]?` |
+| POST | `/conversations/<id>/messages` | send | `body, subject?, template?, template_language?, template_params[]?, mailbox_id?` |
 
 ## Examples
 

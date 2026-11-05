@@ -13,9 +13,9 @@ def account_for(session, kind):
 
 def status(session):
     """{kind: {'configured': bool, 'account': ChannelAccount|None}} for the integrations page."""
-    from app import mailer
+    from app import mailboxes
     from app.channels import whatsapp
     return {
-        "email": {"configured": mailer.smtp_configured(), "account": account_for(session, "email")},
+        "email": {"configured": mailboxes.ready(session), "account": account_for(session, "email")},
         "whatsapp": {"configured": whatsapp.configured(), "account": account_for(session, "whatsapp")},
     }

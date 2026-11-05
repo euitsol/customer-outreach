@@ -26,6 +26,17 @@
   </div>
 
   <div class="card card-pad">
+    <h2>Send from</h2>
+    <p class="muted small mb2">Tick every mailbox this campaign may use; emails rotate between them (the one that has sent the fewest today goes next, and follow-ups stay on the mailbox that wrote first). With none ticked it uses the first active mailbox only. Manage them under <a href="{{ url_for('workspace.mailboxes') }}">Workspace &gt; Mailboxes</a>.</p>
+    <div class="form-grid">
+      {% for m in boxes %}
+      <label class="check"><input type="checkbox" name="mailbox_ids" value="{{ m.id }}" {{ 'checked' if m.id in (c.mailbox_ids or []) }}><span><b>{{ m.name }}</b> <span class="faint">{{ m.email }}</span>{% if m.status != 'active' %} <span class="faint">(disabled)</span>{% endif %}{% if m.daily_limit %}<div class="hint">max {{ m.daily_limit }}/day</div>{% endif %}</span></label>
+      {% else %}<div class="muted small">No mailbox yet.</div>{% endfor %}
+    </div>
+    {% if not usable_ids %}<div class="flash warn mt1"><span>No active mailbox is selected for this campaign: it will not send until you tick one that is active.</span></div>{% endif %}
+  </div>
+
+  <div class="card card-pad">
     <h2 class="mb2">Sender &amp; tracking</h2>
     <div class="form-grid">
       <label class="field"><span class="lbl">Sender name</span><input type="text" name="sender_name" value="{{ c.sender_name or '' }}" placeholder="{{ s.sender_name }}"></label>

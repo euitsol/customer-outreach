@@ -8,7 +8,7 @@ from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import selectinload
 from werkzeug.datastructures import MultiDict
 
-from app import mailer
+from app import mailboxes, mailer
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.crm import (
@@ -267,7 +267,8 @@ def detail(person_id):
         consents=consents, fields=cf_svc.definitions(sess, "person"), s=s,
         activity_kinds=activities_svc.ACTIVITY_KINDS, enrolled_ids=enrolled_ids,
         wa_window=conv_svc.whatsapp_window_open(wa_conv) if wa_conv else False,
-        channels={"email": mailer.smtp_configured(), "whatsapp": whatsapp.configured()},
+        channels={"email": mailboxes.ready(sess), "whatsapp": whatsapp.configured()},
+        mailboxes=mailboxes.usable(sess),
         wa_templates=sess.query(Template).filter(Template.channel == "whatsapp").order_by(Template.name).all(),
         email_templates=sess.query(Template).filter(Template.channel == "email").order_by(Template.name).all(),
         tags=", ".join(t.name for t in p.tags), **_choices(sess))
@@ -410,7 +411,8 @@ def message(person_id):
         m = conv_svc.send(sess, p, channel, request.form.get("body"), subject=request.form.get("subject"),
                           user=current_user(), actor=actor(), template=template,
                           template_language=(request.form.get("wa_language") or "en_US").strip(),
-                          template_params=params, settings=settings_now())
+                          template_params=params, settings=settings_now(),
+                          mailbox_id=int_arg("mailbox_id", None, request.form))
         sess.commit()
         ok(f"{channel.capitalize()} sent.")
         return redirect(url_for("inbox.index", c=m.conversation_id))

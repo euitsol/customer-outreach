@@ -64,7 +64,8 @@
       {% if current.channel == 'whatsapp' and not wa_window %}<div class="flash warn mb1"><span>More than 24 hours since {{ person.first_name or 'they' }} last wrote: WhatsApp only allows an approved template until they reply.</span></div>{% endif %}
       <form method="post" action="{{ url_for('inbox.reply', conversation_id=current.id) }}" class="stack" data-channel-form data-channel="{{ current.channel }}">
         {{ csrf_field() }}<input type="hidden" name="status" value="{{ status }}">
-        {% if current.channel == 'email' %}<input type="text" name="subject" placeholder="Subject (blank = Re: last message)">{% endif %}
+        {% if current.channel == 'email' %}<input type="text" name="subject" placeholder="Subject (blank = Re: last message)">
+        {% if mailboxes|length > 1 %}<label class="field"><span class="lbl">Send from</span><select name="mailbox_id"><option value="">Same mailbox as this thread</option>{% for m in mailboxes %}<option value="{{ m.id }}">{{ m.name }} · {{ m.email }}</option>{% endfor %}</select></label>{% endif %}{% endif %}
         <textarea name="body" placeholder="Reply to {{ person.first_name or person.display_name }}…"></textarea>
         {% if current.channel == 'whatsapp' %}
         <div class="row small">

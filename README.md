@@ -11,7 +11,7 @@ an MCP server so Claude can work with your data. Flask + Postgres, five containe
 | **CRM** | **People** (filters, bulk tag / lifecycle / owner / enroll / merge / export; profile with identities, consent, custom fields, timeline, tasks, deals, campaigns; send email or WhatsApp), **Companies** (people, deals, account notes), **Deals** (kanban board with drag & drop, list, weighted forecast, multi-person deals with roles) |
 | **Work** | **Inbox** (every email reply and WhatsApp chat per person; reply, assign, close; WhatsApp 24-hour window and templates), **Tasks** (due today / overdue / mine), **Dashboard** |
 | **Outreach** | **Campaigns** with multi-stage sequences, per-person email text, paced sending, follow-ups, open / click tracking; **Enrollments** (who is where in which sequence), **Outbox**, **Email activity**, **Import** (CSV / Excel into people + companies + a campaign) |
-| **Workspace** | Users and roles, API keys, Integrations (SMTP/IMAP, WhatsApp, Claude), custom fields, pipelines, audit log, sending settings |
+| **Workspace** | Users and roles, API keys, Mailboxes (several SMTP/IMAP accounts), Integrations (WhatsApp, Claude), custom fields, pipelines, audit log, sending settings |
 
 Rules that hold everywhere: a reply on **any** channel stops that person's sequences; unsubscribes and
 hard bounces suppress the address across campaigns and are recorded as consent / identity status;

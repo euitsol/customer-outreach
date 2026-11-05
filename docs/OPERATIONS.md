@@ -20,9 +20,9 @@ advisory lock, so exactly one container migrates) and default rows.
 | `POSTGRES_PASSWORD`, `DATABASE_URL` | yes | Database (`postgresql+psycopg2://mailcampaign:PASS@db:5432/mailcampaign`) |
 | `ADMIN_USER`, `ADMIN_PASSWORD` | yes | Built-in admin login (personal users are added in the panel) |
 | `SECRET_KEY` | recommended | Session signing key (long random string) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | for email | Outgoing mail (587 STARTTLS or 465 SSL) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | for email | Outgoing mail (587 STARTTLS or 465 SSL). Becomes the "Default mailbox"; more mailboxes are added in the panel (Workspace > Mailboxes) and need no `.env` change |
 | `SENDER_NAME`, `SENDER_EMAIL` | for email | From header |
-| `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | for replies | Mailbox watched for replies and bounces |
+| `IMAP_HOST`, `IMAP_PORT`, `IMAP_USER`, `IMAP_PASSWORD` | for replies | Inbox of the default mailbox, watched for replies and bounces (other mailboxes have their own IMAP settings in the panel) |
 | `TRACK_BASE_URL` | yes | Public HTTPS URL for tracking pixels, links, unsubscribe and webhooks |
 | `PUBLIC_BASE_URL` | no | Panel URL shown in instructions (defaults to `TRACK_BASE_URL`) |
 | `TIMEZONE` | no | Default timezone for sending windows and display (`Europe/Dublin`) |
@@ -128,7 +128,7 @@ Meta's retries never create duplicates. *Integrations > Recent webhook deliverie
 |---|---|
 | Worker "SMTP problem, pausing 5 min" | SMTP credentials / provider limits; `Sending settings > SMTP test` |
 | Nothing sends | sending paused? campaign active? send window? daily limit reached? |
-| Replies not detected | IMAP settings; the reply must come from a known address or quote a sent Message-ID |
+| Replies not detected | IMAP settings of the mailbox that sent the email (Workspace > Mailboxes shows the last check per mailbox); the reply must come from a known address or quote a sent Message-ID |
 | Webhook 403 | `WHATSAPP_APP_SECRET` missing/wrong |
 | Web won't start after deploy | `docker compose logs web` - a failed migration is rolled back and logged; restore the pre-deploy backup if needed |
 

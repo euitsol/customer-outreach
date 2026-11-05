@@ -2,7 +2,7 @@
 import secrets
 from datetime import timedelta
 
-from app import mailer, merge
+from app import mailboxes, mailer, merge
 from app.clock import utcnow
 from app.crm import conversations
 from app.mailer import SendError
@@ -40,6 +40,7 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
     now = now or utcnow()
     campaign = campaign or enrollment.campaign
     steps = steps if steps is not None else steps_of(session, enrollment.campaign_id)
+    manual = bool(message and message.queued)            # send now / retry: a mailbox's daily limit does not block it
     message = message or get_or_create_message(session, enrollment, step)
 
     subject, body = render_for(session, enrollment, step, steps, message, campaign, s)
@@ -47,6 +48,12 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
         _fail(session, enrollment, message, "No email body: write one for this stage or for this person.",
               s, now, permanent=True)
         return "failed", message.last_error
+
+    mailbox = mailboxes.choose(session, campaign, enrollment, s, enforce_limit=not manual)
+    if mailbox is None:
+        message.last_error = ("No mailbox is available to send from. Add or enable one under "
+                              "Workspace > Mailboxes, or check this campaign's mailbox choice.")
+        return "system", message.last_error
 
     message.open_token = message.open_token or secrets.token_urlsafe(16)
     message.unsub_token = message.unsub_token or secrets.token_urlsafe(16)
@@ -58,10 +65,10 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
     msg, new_id = mailer.build_message(
         to_email=enrollment.email, to_name=enrollment.full_name, subject=subject, plain=plain,
         html_doc=html_doc, sender_name=campaign.sender_name or s["sender_name"],
-        reply_to=reply_to, in_reply_to=in_reply_to, unsub_token=message.unsub_token)
+        reply_to=reply_to, in_reply_to=in_reply_to, unsub_token=message.unsub_token, from_email=mailbox.email)
 
     try:
-        mailer.deliver(msg, enrollment.email)
+        mailer.deliver(msg, enrollment.email, mailbox)
     except SendError as e:
         if e.kind == "system":
             message.last_error = str(e)
@@ -80,6 +87,7 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
     message.attempts = (message.attempts or 0) + 1
     message.next_attempt_at = None
     message.message_id = new_id
+    message.mailbox_id = mailbox.id
     message.sent_subject, message.sent_body = subject, body
     if step.position == 1 or not enrollment.message_id:
         enrollment.message_id = new_id
@@ -87,7 +95,7 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
         enrollment.stage = step.position
     enrollment.last_step_at = now
     session.add(Event(enrollment_id=enrollment.id, stage=step.position, type="sent", detail=subject))
-    conversations.record_campaign_email(session, enrollment, message, subject, new_id, now)
+    conversations.record_campaign_email(session, enrollment, message, subject, new_id, now, mailbox.email)
     recompute_enrollment(session, enrollment, steps, campaign, now)
     return "sent", None
 
@@ -122,11 +130,16 @@ def _fail(session, enrollment, message, error, s, now, permanent=False):
 
 def send_test(session, step, steps, campaign, enrollment, to_email, s):
     """Send a rendered preview to an arbitrary address. Touches no delivery state."""
+    mailbox = mailboxes.choose(session, campaign, None, s, enforce_limit=False)
+    if mailbox is None:
+        raise SendError("No mailbox is available to send from. Add or enable one under Workspace > Mailboxes.",
+                        "system")
     subject, body = render_for(session, enrollment, step, steps, None, campaign, s)
     opts = tracking_opts(campaign, s)
     opts.update(track_opens=False, track_clicks=False)
     plain, html_doc = mailer.prepare_bodies(session, body, enrollment.id, step.position, "test", "test", opts)
     msg, _ = mailer.build_message(
         to_email=to_email, to_name="", subject=f"[TEST] {subject}", plain=plain, html_doc=html_doc,
-        sender_name=campaign.sender_name or s["sender_name"], reply_to=campaign.reply_to or s["reply_to"] or None)
-    mailer.deliver(msg, to_email)
+        sender_name=campaign.sender_name or s["sender_name"], reply_to=campaign.reply_to or s["reply_to"] or None,
+        from_email=mailbox.email)
+    mailer.deliver(msg, to_email, mailbox)

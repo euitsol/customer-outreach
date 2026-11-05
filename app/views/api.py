@@ -126,7 +126,13 @@ def people_message(sess, pid):
     b = body()
     return actions.send_message(sess, g.api_actor, pid, b.get("channel", "email"), b.get("body"), b.get("subject"),
                                 b.get("conversation_id"), b.get("template"), b.get("template_language", "en_US"),
-                                b.get("template_params")), 201
+                                b.get("template_params"), b.get("mailbox_id")), 201
+
+
+@bp.route("/mailboxes", methods=["GET"])
+@endpoint()
+def mailboxes_list(sess):
+    return {"mailboxes": actions.list_mailboxes(sess)}
 
 
 # ------------------------------------------------------------------ companies
@@ -273,4 +279,4 @@ def conversations_reply(sess, cid):
     b = body()
     return actions.send_message(sess, g.api_actor, conv.person_id, conv.channel, b.get("body"), b.get("subject"),
                                 cid, b.get("template"), b.get("template_language", "en_US"),
-                                b.get("template_params")), 201
+                                b.get("template_params"), b.get("mailbox_id")), 201

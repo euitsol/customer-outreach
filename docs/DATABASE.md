@@ -54,6 +54,7 @@ erDiagram
 
 | Table | Purpose |
 |---|---|
+| `mailboxes` | Sending mailboxes (SMTP, optional IMAP, daily limit, status, reply-checker position). The row with `from_env` mirrors the `.env` account and takes its credentials from `.env`; other rows store their own passwords (never returned by the API or shown in the panel). `messages.mailbox_id` records which mailbox sent an email; `campaigns.mailbox_ids` lists the mailboxes a campaign rotates through. |
 | `channel_accounts` | The SMTP mailbox, WhatsApp Business numbers, ... (secrets stay in env; this is identity + config + health). |
 | `conversations` | One thread per person per channel (the shared inbox): status, assignee, unread count, `last_inbound_at` (WhatsApp 24-hour window). |
 | `conversation_messages` | Every message in/out. Unique `(channel, external_id)` makes webhook retries and IMAP re-reads idempotent. Campaign emails are not copied: the row links to `messages` via `sequence_message_id`. 64-bit id. |

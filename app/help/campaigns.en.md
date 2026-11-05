@@ -11,7 +11,7 @@ Automatic email sequences sent to the people enrolled in them.
     * Click a merge-field chip to insert it. `{{first_name|there}}` uses "there" when the first name is empty. Available: name, company, job title, email, phone, company website and domain, your custom fields and any imported column.
     * **Preview** with a real person and **send a test** to yourself.
 3. **Enroll people**: import a sheet into the campaign ([Import](/help/import)), select people on [People](/help/people) and click *Enroll*, or use *Enroll someone*.
-4. **Settings** tab (optional): start date and time, its own daily limit, delays, sender name, reply-to, tracking on or off.
+4. **Settings** tab (optional): start date and time, its own daily limit, delays, which mailboxes to send from ([Mailboxes](/help/mailboxes)), sender name, reply-to, tracking on or off.
 5. Click **Start campaign**. The worker sends within your limits and send window.
 
 > Nothing is sent while a campaign is a draft or paused.

@@ -2,9 +2,11 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
-from app import merge, settings as app_settings
-from app.mailer import SendError, smtp_configured
-from app.models import Campaign, CampaignStep, Company, CustomField, Enrollment, Message, Person, Template
+from app import mailboxes, merge, settings as app_settings
+from app.mailer import SendError
+from app.models import (
+    Campaign, CampaignStep, Company, CustomField, Enrollment, Mailbox, Message, Person, Template,
+)
 from app.queries import campaign_summaries, daily_activity, engagement_stats, stage_stats, status_counts
 from app.sender import render_for, send_test
 from app.services import (
@@ -144,8 +146,9 @@ def set_status(cid):
         if not steps:
             err("Add at least one email stage before starting.")
             return back("campaigns.sequence", cid=cid)
-        if not smtp_configured():
-            warn("SMTP is not configured on the server - emails will fail until it is.")
+        if not mailboxes.eligible(sess, c):
+            warn("This campaign has no active mailbox to send from - emails will wait until you add or enable one "
+                 "(Workspace > Mailboxes).")
         set_campaign_status(c, "active")
         recompute_campaign(sess, c)
         ok(f"'{c.name}' is live. The worker sends within the limits set in Settings.")
@@ -190,6 +193,9 @@ def edit(cid):
             c.track_clicks = form_bool("track_clicks")
             c.sender_name = (request.form.get("sender_name") or "").strip() or None
             c.reply_to = (request.form.get("reply_to") or "").strip() or None
+            known = {m.id for m in sess.query(Mailbox)}
+            c.mailbox_ids = sorted(int(i) for i in set(request.form.getlist("mailbox_ids"))
+                                   if i.isdigit() and int(i) in known)
             if start_changed:
                 recompute_campaign(sess, c)
             sess.commit()
@@ -197,6 +203,8 @@ def edit(cid):
             return redirect(url_for("campaigns.edit", cid=cid))
     n_contacts = sess.query(func.count(Enrollment.id)).filter(Enrollment.campaign_id == cid).scalar() or 0
     return render_template("campaigns/edit.html", c=c, steps=steps_of(sess, cid), tab="settings", s=s,
+                           boxes=sess.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id).all(),
+                           usable_ids={m.id for m in mailboxes.eligible(sess, c)},
                            start_value=app_settings.to_local_input(c.start_at, s), n_contacts=n_contacts)
 
 
@@ -249,7 +257,7 @@ def sequence(cid):
             unknown[st.id] = bad
     return render_template("campaigns/sequence.html", c=c, steps=steps, tab="sequence", sent_by_step=sent_by_step,
                            variables=variables, sample=sample, templates=templates, unknown=unknown,
-                           smtp_ok=smtp_configured(), s=settings_now())
+                           smtp_ok=bool(mailboxes.eligible(sess, c)), s=settings_now())
 
 
 @bp.route("/campaigns/<int:cid>/steps/add", methods=["POST"])

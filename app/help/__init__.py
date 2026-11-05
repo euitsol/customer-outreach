@@ -42,6 +42,7 @@ MODULES = {
     "suppression": ("library", "admin.suppression", ("admin.suppression",)),
     "settings": ("workspace", "admin.settings", ("admin.settings", "admin.test_smtp", "admin.test_imap")),
     "integrations": ("workspace", "workspace.integrations", ("workspace.integrations",)),
+    "mailboxes": ("workspace", "workspace.mailboxes", ("workspace.mailboxes",)),
     "fields": ("workspace", "workspace.fields", ("workspace.fields", "workspace.pipelines")),
     "users": ("workspace", "workspace.users", ("workspace.users", "workspace.me")),
     "api-keys": ("workspace", "workspace.api_keys", ("workspace.api_keys",)),

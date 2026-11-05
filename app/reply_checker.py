@@ -11,11 +11,11 @@ from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 
 from sqlalchemy import func
 
-from app import config, settings as app_settings
+from app import mailboxes, settings as app_settings
 from app.clock import utcnow
 from app.crm import conversations, people as people_svc
 from app.db import SessionLocal, init_db
-from app.models import ContactPoint, Enrollment, Event, Message
+from app.models import ContactPoint, Enrollment, Event, Mailbox, Message
 from app.services import add_suppression
 
 EMAIL_FIND = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
@@ -178,27 +178,24 @@ def handle_message(session, msg, own_addrs):
     return "reply" if marked else ("logged" if logged else None)
 
 
-def check_replies(session):
-    if not (config.IMAP_HOST and config.IMAP_USER):
-        app_settings.put(session, "reply_status", "IMAP not configured")
-        return
-    own = {a.lower() for a in (config.IMAP_USER, config.SENDER_EMAIL, config.SMTP_USER) if a}
-    imap = imaplib.IMAP4_SSL(config.IMAP_HOST, config.IMAP_PORT, timeout=30)
+def check_mailbox(session, mb, own):
+    """Read new mail in one mailbox's INBOX. Returns how many messages were new."""
+    host, port, user, password = mailboxes.imap_creds(mb)
+    imap = imaplib.IMAP4_SSL(host, port, timeout=30)
     try:
-        imap.login(config.IMAP_USER, config.IMAP_PASSWORD)
+        imap.login(user, password)
         imap.select("INBOX", readonly=True)
         validity = ""
         typ, data = imap.response("UIDVALIDITY")
         if data and data[0]:
             validity = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
 
-        last_uid = app_settings.get_raw(session, "imap_last_uid")
-        if validity != app_settings.get_raw(session, "imap_uidvalidity") or last_uid is None:
+        if validity != (mb.imap_uidvalidity or "") or mb.imap_last_uid is None:
             since = (utcnow() - timedelta(days=14)).strftime("%d-%b-%Y")
             typ, data = imap.uid("SEARCH", None, "SINCE", since)
             last = 0
         else:
-            last = int(last_uid)
+            last = int(mb.imap_last_uid)
             typ, data = imap.uid("SEARCH", None, "UID", f"{last + 1}:*")
         uids = sorted(int(u) for u in (data[0] or b"").split()) if typ == "OK" else []
         uids = [u for u in uids if u > last]
@@ -214,14 +211,41 @@ def check_replies(session):
             top = max(top, uid)
         if uids:
             top = max(top, uids[-1])
-        app_settings.put(session, "imap_last_uid", top)
-        app_settings.put(session, "imap_uidvalidity", validity)
-        app_settings.put(session, "reply_status", f"OK, checked {len(uids)} new message(s)")
+        mb.imap_last_uid = str(top)
+        mb.imap_uidvalidity = validity
+        return len(uids)
     finally:
         try:
             imap.logout()
         except Exception:
             pass
+
+
+def check_replies(session):
+    """Check every active mailbox that has IMAP set up; one failing mailbox does not stop the others."""
+    boxes = [m for m in session.query(Mailbox).filter(Mailbox.status == "active").order_by(Mailbox.id)
+             if mailboxes.imap_creds(m)]
+    if not boxes:
+        app_settings.put(session, "reply_status", "IMAP not configured")
+        return
+    # Mail from any of our own mailboxes is never a reply or a bounce.
+    own = {a for m in session.query(Mailbox) for a in mailboxes.addresses(m)}
+    parts = []
+    for mb in boxes:
+        mb_id, name = mb.id, mb.name
+        try:
+            n = check_mailbox(session, mb, own)
+            mb.reply_status = f"OK, checked {n} new message(s)"
+            session.commit()
+        except Exception as e:  # noqa: BLE001 - keep going with the other mailboxes
+            session.rollback()
+            mb = session.get(Mailbox, mb_id)
+            mb.reply_status = f"Error: {e}"[:500]
+            session.commit()
+            print(f"reply_checker error in {name}:", traceback.format_exc(), flush=True)
+        parts.append(session.get(Mailbox, mb_id).reply_status)
+    app_settings.put(session, "reply_status", parts[0] if len(parts) == 1 else
+                     "; ".join(f"{b.name}: {t}" for b, t in zip(boxes, parts)))
 
 
 def main():

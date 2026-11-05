@@ -4,7 +4,7 @@ import traceback
 
 from sqlalchemy import and_, case, exists, func, or_, select
 
-from app import settings as app_settings
+from app import mailboxes, settings as app_settings
 from app.clock import utcnow
 from app.db import SessionLocal, init_db
 from app.models import Campaign, CampaignStep, Enrollment, Event, Message
@@ -64,7 +64,7 @@ def pick_auto(session, s, now):
                  or_(Enrollment.next_due_at.is_(None), Enrollment.next_due_at <= now),
                  or_(Campaign.start_at.is_(None), Campaign.start_at <= now),
                  not_suppressed(), email_consent_ok(), ~blocked_msg))
-    capped = capped_campaigns(session, s)
+    capped = capped_campaigns(session, s) + mailboxes.campaigns_without_room(session, s)
     if capped:
         q = q.filter(Enrollment.campaign_id.notin_(capped))
     return q.order_by(priority, Enrollment.next_due_at.asc(), Enrollment.id).first()
@@ -109,6 +109,10 @@ def run_cycle(session):
             return
         if s["daily_limit"] - sent_today(session, s) <= 0:
             status_text(session, f"Daily limit reached ({s['daily_limit']}). Resumes after midnight {s['timezone']}")
+            return
+
+        if not mailboxes.ready(session):
+            status_text(session, "No active mailbox: add or enable one under Workspace > Mailboxes")
             return
 
         message = pick_manual(session)

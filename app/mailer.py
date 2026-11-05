@@ -24,8 +24,14 @@ class SendError(Exception):
         self.kind = kind
 
 
-def smtp_configured():
-    return bool(config.SMTP_HOST and config.SMTP_USER and config.SMTP_PASSWORD)
+def smtp_creds(mb):
+    """(host, port, user, password) of a mailbox, or None while any of them is missing. The mailbox
+    flagged from_env uses the SMTP_* values from .env."""
+    if mb.from_env:
+        host, port, user, pw = config.SMTP_HOST, config.SMTP_PORT, config.SMTP_USER, config.SMTP_PASSWORD
+    else:
+        host, port, user, pw = mb.smtp_host, mb.smtp_port or 587, mb.smtp_user or mb.email, mb.smtp_password
+    return (host, port, user, pw) if host and user and pw else None
 
 
 def _split_url(raw):
@@ -103,14 +109,14 @@ def prepare_bodies(session, body_text, enrollment_id, stage, open_token, unsub_t
     return plain + footer_plain, html_doc
 
 
-def build_message(*, to_email, to_name, subject, plain, html_doc, sender_name, reply_to,
+def build_message(*, to_email, to_name, subject, plain, html_doc, sender_name, reply_to, from_email,
                   in_reply_to=None, unsub_token=None):
     msg = MIMEMultipart("alternative")
-    msg["From"] = formataddr((sender_name or "", config.SENDER_EMAIL))
+    msg["From"] = formataddr((sender_name or "", from_email))
     msg["To"] = formataddr((to_name or "", to_email)) if to_name else to_email
     msg["Subject"] = Header(subject, "utf-8") if subject else ""
     msg["Date"] = formatdate(localtime=False)
-    domain = config.SENDER_EMAIL.split("@")[-1] if "@" in config.SENDER_EMAIL else None
+    domain = from_email.split("@")[-1] if "@" in from_email else None
     new_id = make_msgid(domain=domain)
     msg["Message-ID"] = new_id
     if reply_to:
@@ -120,28 +126,30 @@ def build_message(*, to_email, to_name, subject, plain, html_doc, sender_name, r
         msg["References"] = in_reply_to
     if unsub_token:
         msg["List-Unsubscribe"] = (f"<{config.TRACK_BASE_URL}/t/u/{unsub_token}>, "
-                                   f"<mailto:{config.SENDER_EMAIL}?subject=unsubscribe>")
+                                   f"<mailto:{from_email}?subject=unsubscribe>")
         msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     msg.attach(MIMEText(plain, "plain", "utf-8"))
     msg.attach(MIMEText(html_doc, "html", "utf-8"))
     return msg, new_id
 
 
-def deliver(msg, to_email):
-    """Send over SMTP. Raises SendError."""
-    if not smtp_configured():
-        raise SendError("SMTP is not configured (SMTP_HOST / SMTP_USER / SMTP_PASSWORD)", "system")
+def deliver(msg, to_email, mailbox):
+    """Send over the mailbox's SMTP account. Raises SendError."""
+    creds = smtp_creds(mailbox)
+    if not creds:
+        raise SendError(f"SMTP is not set up for {mailbox.email} (server, user and password are needed)", "system")
+    host, port, user, password = creds
     context = ssl.create_default_context()
     try:
-        if config.SMTP_PORT == 465:
-            server = smtplib.SMTP_SSL(config.SMTP_HOST, config.SMTP_PORT, context=context, timeout=45)
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port, context=context, timeout=45)
         else:
-            server = smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT, timeout=45)
+            server = smtplib.SMTP(host, port, timeout=45)
         with server:
-            if config.SMTP_PORT != 465:
+            if port != 465:
                 server.starttls(context=context)
-            server.login(config.SMTP_USER, config.SMTP_PASSWORD)
-            server.sendmail(config.SENDER_EMAIL, [to_email], msg.as_string())
+            server.login(user, password)
+            server.sendmail(mailbox.email, [to_email], msg.as_string())
     except smtplib.SMTPRecipientsRefused as e:
         permanent = any(code >= 500 for code, _ in e.recipients.values())
         raise SendError(f"Recipient refused: {e}", "recipient" if permanent else "message")

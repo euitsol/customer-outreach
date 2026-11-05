@@ -4,13 +4,16 @@ from flask import Blueprint, abort, redirect, render_template, request, url_for
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash
 
-from app import config, mailer
+from app import config, mailboxes as mailbox_svc
 from app.channels import status as channel_status, whatsapp
 from app.crm import apikeys, audit, custom_fields as cf_svc, normalize
 from app.models import (
-    ApiKey, AuditLog, ChannelAccount, CustomField, Deal, Pipeline, PipelineStage, User, WebhookEvent,
+    ApiKey, AuditLog, Campaign, ChannelAccount, CustomField, Deal, Mailbox, Pipeline, PipelineStage, User,
+    WebhookEvent,
 )
-from app.views.common import actor, current_user, db, err, form_bool, get_or_404, int_arg, ok, paginate, warn
+from app.views.common import (
+    actor, current_user, db, err, form_bool, get_or_404, int_arg, ok, paginate, settings_now, warn,
+)
 
 bp = Blueprint("workspace", __name__)
 
@@ -140,9 +143,49 @@ def integrations():
     recent_hooks = sess.query(WebhookEvent).order_by(WebhookEvent.id.desc()).limit(15).all()
     return render_template("workspace/integrations.html", channels=channel_status(sess),
                            accounts=sess.query(ChannelAccount).order_by(ChannelAccount.kind, ChannelAccount.id).all(),
-                           base=public_base(), config=config, smtp_ok=mailer.smtp_configured(),
+                           base=public_base(), config=config, smtp_ok=mailbox_svc.ready(sess),
+                           mailbox_count=sess.query(func.count(Mailbox.id)).filter(Mailbox.status == "active").scalar(),
                            wa_ok=whatsapp.configured(), recent_hooks=recent_hooks, mcp_port=config.MCP_PORT,
                            keys=sess.query(func.count(ApiKey.id)).filter(ApiKey.revoked_at.is_(None)).scalar())
+
+
+# ------------------------------------------------------------------ mailboxes
+
+@bp.route("/settings/mailboxes", methods=["GET", "POST"])
+def mailboxes():
+    """Sending mailboxes (SMTP, plus IMAP to read replies). Any number can be active at once."""
+    sess = db()
+    if request.method == "POST":
+        _require_admin()
+        act = request.form.get("action")
+        try:
+            if act == "create":
+                mb = mailbox_svc.save(sess, None, request.form, actor())
+                ok(f"Mailbox {mb.email} added. Test it below, then choose it in a campaign's Settings.")
+            else:
+                mb = get_or_404(Mailbox, int_arg("mailbox_id", 0, request.form))
+                if act == "update":
+                    mailbox_svc.save(sess, mb, request.form, actor())
+                    ok("Mailbox saved.")
+                elif act == "delete":
+                    mailbox_svc.delete(sess, mb, actor())
+                    ok("Mailbox deleted.")
+                else:
+                    abort(400)
+            sess.commit()
+        except ValueError as e:
+            sess.rollback()
+            err(str(e))
+        return redirect(url_for("workspace.mailboxes"))
+    rows = sess.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id).all()
+    counts = mailbox_svc.sent_today(sess, settings_now())
+    users = {}
+    for c in sess.query(Campaign).filter(Campaign.status != "archived"):
+        for i in (c.mailbox_ids or []):
+            users.setdefault(i, []).append(c.name)
+    default = mailbox_svc.default_mailbox(sess)
+    return render_template("workspace/mailboxes.html", rows=rows, counts=counts, campaigns_using=users,
+                           default_id=default.id if default else None, creds=mailbox_svc)
 
 
 # ------------------------------------------------------------------ custom fields

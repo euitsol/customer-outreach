@@ -15,7 +15,7 @@
 {% if health.paused %}
 <div class="banner bad"><b>Sending is switched off.</b> No emails go out until you turn it back on in <a href="{{ url_for('admin.settings') }}">Settings</a>.</div>
 {% elif not health.smtp_configured %}
-<div class="banner bad"><b>SMTP is not configured.</b> Add SMTP_HOST, SMTP_USER and SMTP_PASSWORD to the server's .env file.</div>
+<div class="banner bad"><b>No mailbox can send email.</b> Add one under <a href="{{ url_for('workspace.mailboxes') }}">Workspace &gt; Mailboxes</a>.</div>
 {% elif not health.worker_alive %}
 <div class="banner bad"><b>The sending worker doesn't seem to be running.</b> Check <code>docker compose logs worker</code>.</div>
 {% endif %}
@@ -105,7 +105,7 @@
         <dl class="kv">
           <dt>Sending</dt><dd><span class="status-dot {{ 'bad' if health.paused else 'good' }}"></span>{{ 'Switched off' if health.paused else 'Enabled' }}</dd>
           <dt>Worker</dt><dd><span class="status-dot {{ 'good' if health.worker_alive else 'bad' }}"></span>{{ health.worker_status }}</dd>
-          <dt>SMTP</dt><dd><span class="status-dot {{ 'good' if health.smtp_configured else 'bad' }}"></span>{{ 'Configured' if health.smtp_configured else 'Not configured' }}</dd>
+          <dt>Mailboxes</dt><dd><span class="status-dot {{ 'good' if health.smtp_configured else 'bad' }}"></span>{{ health.mailboxes ~ ' active' if health.smtp_configured else 'None set up' }} · <a href="{{ url_for('workspace.mailboxes') }}">manage</a></dd>
           <dt>Replies</dt><dd><span class="status-dot {{ 'good' if health.reply_alive and health.imap_configured else 'warn' }}"></span>{{ health.reply_status if health.imap_configured else 'IMAP not configured' }}</dd>
           <dt>WhatsApp</dt><dd><span class="status-dot {{ 'good' if health.whatsapp_configured else 'warn' }}"></span>{{ 'Connected' if health.whatsapp_configured else 'Not connected' }} · <a href="{{ url_for('workspace.integrations') }}">set up</a></dd>
           <dt>Pace</dt><dd>{{ s.min_delay }}-{{ s.max_delay }}s between emails, max {{ s.daily_limit }}/day</dd>

@@ -40,7 +40,8 @@
             <label class="check"><input type="radio" name="channel" value="email" {{ 'checked' if p.email or not p.phone }} {{ 'disabled' if not p.email }}><span>Email{% if not p.email %} <span class="faint">(no address)</span>{% endif %}</span></label>
             <label class="check"><input type="radio" name="channel" value="whatsapp" {{ 'checked' if p.phone and not p.email }} {{ 'disabled' if not p.phone }}><span>WhatsApp{% if not p.phone %} <span class="faint">(no number)</span>{% elif not channels.whatsapp %} <span class="faint">(not connected)</span>{% endif %}</span></label>
           </div>
-          <div data-for="email"><input type="text" name="subject" placeholder="Subject (blank = continue the last thread)"></div>
+          <div data-for="email" class="stack"><input type="text" name="subject" placeholder="Subject (blank = continue the last thread)">
+            {% if mailboxes|length > 1 %}<select name="mailbox_id" title="Send from"><option value="">Send from: the mailbox that last wrote to them</option>{% for m in mailboxes %}<option value="{{ m.id }}">{{ m.name }} · {{ m.email }}</option>{% endfor %}</select>{% endif %}</div>
           <textarea name="body" rows="3" placeholder="Write your message… (your signature from Settings is added to emails)"></textarea>
           <div data-for="whatsapp" class="small muted">
             {% if wa_window %}WhatsApp 24-hour window is open: free text is fine.{% else %}No reply from them in the last 24 hours, so WhatsApp only allows an approved template:{% endif %}

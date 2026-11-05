@@ -304,6 +304,13 @@ async def update_task(task_id: int, ctx: Context, status: str | None = None, tit
 # ---------------------------------------------------------------------- campaigns
 
 @server.tool(annotations=READ)
+async def list_mailboxes(ctx: Context) -> list:
+    """Sending mailboxes (id, name, email, status, daily limit, emails sent today). Use an id as `mailbox_id`
+    in send_message to choose which mailbox an email goes out from. Passwords are never shown."""
+    return await run(ctx, "read", actions.list_mailboxes)
+
+
+@server.tool(annotations=READ)
 async def list_campaigns(ctx: Context, include_archived: bool = False) -> list:
     """Email campaigns with status and headline stats (enrolled, sent, open rate, replies, failures)."""
     return await run(ctx, "read", actions.list_campaigns, include_archived)
@@ -348,13 +355,16 @@ async def get_conversation(conversation_id: int, ctx: Context, limit: int = 50) 
 @server.tool(annotations=OUTWARD)
 async def send_message(person_id: int, channel: str, ctx: Context, body: str | None = None,
                        subject: str | None = None, conversation_id: int | None = None, template: str | None = None,
-                       template_language: str = "en_US", template_params: list[str] | None = None) -> dict:
+                       template_language: str = "en_US", template_params: list[str] | None = None,
+                       mailbox_id: int | None = None) -> dict:
     """Send an email or WhatsApp message to a person right now and log it in the inbox. channel: email |
     whatsapp. Email replies continue the last thread when subject is omitted. For WhatsApp outside the 24h
     window pass an approved `template` name (+ template_params). Respects opt-outs and do-not-contact.
-    This reaches a real person: only send what the user asked for. Requires the 'send' permission."""
+    Email goes out from the mailbox that last wrote in the thread unless `mailbox_id` is given (see
+    list_mailboxes). This reaches a real person: only send what the user asked for. Requires the 'send'
+    permission."""
     return await run(ctx, "send", actions.send_message, person_id, channel, body, subject, conversation_id,
-                     template, template_language, template_params)
+                     template, template_language, template_params, mailbox_id)
 
 
 # ---------------------------------------------------------------------- prompts

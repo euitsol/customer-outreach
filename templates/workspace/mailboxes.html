@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pill, csrf_field %}
+{% block title %}Mailboxes{% endblock %}
+
+{% macro server_fields(mb) -%}
+  <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ mb.name if mb else '' }}" placeholder="e.g. Bengali Translations" required></label>
+  <label class="field"><span class="lbl">Email address <span class="faint">(the From address)</span></span><input type="email" name="email" value="{{ mb.email if mb else '' }}" required></label>
+  <div class="form-grid">
+    <label class="field"><span class="lbl">Outgoing server (SMTP)</span><input type="text" name="smtp_host" value="{{ mb.smtp_host or '' if mb else '' }}" placeholder="mail.example.com" required></label>
+    <label class="field"><span class="lbl">SMTP port</span><input type="number" name="smtp_port" value="{{ mb.smtp_port or 587 if mb else 587 }}" min="1" max="65535"><div class="hint">465 = SSL, 587 = STARTTLS.</div></label>
+    <label class="field"><span class="lbl">Login <span class="faint">(blank = the email address)</span></span><input type="text" name="smtp_user" value="{{ mb.smtp_user or '' if mb else '' }}" autocomplete="off"></label>
+    <label class="field"><span class="lbl">Password</span><input type="password" name="smtp_password" autocomplete="new-password" {{ '' if mb else 'required' }} placeholder="{{ 'unchanged' if mb else '' }}"></label>
+  </div>
+  <div class="form-grid">
+    <label class="field"><span class="lbl">Incoming server (IMAP) <span class="faint">(optional)</span></span><input type="text" name="imap_host" value="{{ mb.imap_host or '' if mb else '' }}" placeholder="mail.example.com"><div class="hint">Needed to detect replies and bounces.</div></label>
+    <label class="field"><span class="lbl">IMAP port</span><input type="number" name="imap_port" value="{{ mb.imap_port or 993 if mb else 993 }}" min="1" max="65535"></label>
+    <label class="field"><span class="lbl">IMAP login <span class="faint">(blank = SMTP login)</span></span><input type="text" name="imap_user" value="{{ mb.imap_user or '' if mb else '' }}" autocomplete="off"></label>
+    <label class="field"><span class="lbl">IMAP password <span class="faint">(blank = SMTP password)</span></span><input type="password" name="imap_password" autocomplete="new-password" placeholder="{{ 'unchanged' if mb else '' }}"></label>
+  </div>
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head"><div><h1>Workspace</h1><div class="sub">Sending mailboxes. Add as many as you like and let a campaign rotate through several of them.</div></div></div>
+{% include "workspace/_tabs.html" %}
+
+<div class="card">
+  {% if rows %}
+  <table class="tbl"><thead><tr><th>Mailbox</th><th>Sending</th><th>Replies</th><th>Today</th><th>Used by</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for m in rows %}
+    {% set smtp = creds.smtp_creds(m) %}{% set imap = creds.imap_creds(m) %}
+    <tr>
+      <td><b>{{ m.name }}</b>{% if m.from_env %} <span class="faint small">(.env)</span>{% endif %}<div class="sub">{{ m.email }}</div></td>
+      <td class="small">{% if smtp %}{{ smtp[0] }}:{{ smtp[1] }}{% else %}<span style="color:var(--bad)">not set up</span>{% endif %}</td>
+      <td class="small">{% if imap %}{{ imap[0] }}<div class="muted">{{ m.reply_status or 'not checked yet' }}</div>{% else %}<span class="muted">not read</span>{% endif %}</td>
+      <td class="small">{{ counts.get(m.id, 0) }}{% if m.daily_limit %} / {{ m.daily_limit }}{% endif %}</td>
+      <td class="small">{% set used = campaigns_using.get(m.id, []) %}{% if used %}{{ used|join(', ') }}{% endif %}{% if m.id == default_id %}<div class="muted">campaigns with no choice</div>{% elif not used %}<span class="muted">no campaign</span>{% endif %}</td>
+      <td>{{ pill('active' if m.status == 'active' and smtp else 'paused', 'Active' if m.status == 'active' and smtp else ('Disabled' if m.status != 'active' else 'Incomplete')) }}</td>
+      <td class="right"><button class="btn btn-sm" data-dialog="m{{ m.id }}">Edit &amp; test</button>
+        <dialog id="m{{ m.id }}"><div class="dlg-head"><h2>{{ m.email }}</h2><button class="btn btn-ghost btn-sm" data-close>&times;</button></div>
+          <div class="dlg-body stack">
+            <form method="post" class="stack">{{ csrf_field() }}<input type="hidden" name="action" value="update"><input type="hidden" name="mailbox_id" value="{{ m.id }}">
+              {% if m.from_env %}
+                <p class="small muted">This mailbox uses the <code>SMTP_*</code> / <code>IMAP_*</code> values from the server's <code>.env</code> file. Only its name, limit and status are changed here.</p>
+                <label class="field"><span class="lbl">Name</span><input type="text" name="name" value="{{ m.name }}" required></label>
+              {% else %}{{ server_fields(m) }}{% endif %}
+              <div class="form-grid">
+                <label class="field"><span class="lbl">Daily limit <span class="faint">(emails from this mailbox)</span></span><input type="number" min="1" name="daily_limit" value="{{ m.daily_limit or '' }}" placeholder="no limit"></label>
+                <label class="field"><span class="lbl">Status</span><select name="status"><option value="active" {{ 'selected' if m.status == 'active' }}>Active</option><option value="disabled" {{ 'selected' if m.status == 'disabled' }}>Disabled</option></select></label>
+              </div>
+              <div><button class="btn btn-primary btn-sm">Save</button></div></form>
+            <form method="post" action="{{ url_for('admin.test_smtp') }}" class="row">{{ csrf_field() }}<input type="hidden" name="mailbox_id" value="{{ m.id }}"><input type="hidden" name="next" value="mailboxes">
+              <input type="email" name="to" placeholder="send a test email to…" style="flex:1;min-width:0" required><button class="btn btn-sm" data-once="1">Test sending</button></form>
+            <form method="post" action="{{ url_for('admin.test_imap') }}">{{ csrf_field() }}<input type="hidden" name="mailbox_id" value="{{ m.id }}"><input type="hidden" name="next" value="mailboxes"><button class="btn btn-sm">Test reading replies (IMAP)</button></form>
+            {% if not m.from_env %}
+            <form method="post">{{ csrf_field() }}<input type="hidden" name="action" value="delete"><input type="hidden" name="mailbox_id" value="{{ m.id }}"><button class="btn btn-sm btn-danger" data-confirm="Delete {{ m.email }}? Emails already sent stay in the history.">Delete mailbox</button></form>
+            {% endif %}
+          </div></dialog></td>
+    </tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty"><h3>No mailbox yet</h3><p>Add the mailbox your emails should be sent from.</p></div>{% endif %}
+</div>
+
+<form method="post" class="card card-pad mt2" style="max-width:820px">{{ csrf_field() }}<input type="hidden" name="action" value="create">
+  <h2 class="mb2">Add a mailbox</h2>
+  <div class="stack">
+    {{ server_fields(none) }}
+    <label class="field"><span class="lbl">Daily limit <span class="faint">(optional)</span></span><input type="number" min="1" name="daily_limit" placeholder="no limit" style="max-width:200px"></label>
+  </div>
+  <p class="small muted mt1">The password is stored in the CRM database and is never shown again. A new mailbox sends nothing until you choose it in a campaign's <b>Settings</b>.</p>
+  <div class="form-actions"><button class="btn btn-primary">Add mailbox</button></div>
+</form>
+
+<div class="card card-pad mt2" style="max-width:820px">
+  <h3>How several mailboxes work</h3>
+  <ul class="small muted" style="padding-left:18px;margin:6px 0 0">
+    <li>A campaign sends from the mailboxes ticked in its <b>Settings</b>. With none ticked it uses the first active mailbox only, so adding a mailbox never changes an existing campaign.</li>
+    <li>With several ticked, each new email goes out from the mailbox that has sent the fewest emails today. Follow-ups to a person stay on the mailbox that wrote to them first.</li>
+    <li>A mailbox's daily limit is added to the global and per-campaign limits. When every ticked mailbox has reached its limit, the campaign waits until tomorrow.</li>
+    <li>Replies and bounces are read from every active mailbox that has IMAP set up.</li>
+  </ul>
+</div>
+{% endblock %}

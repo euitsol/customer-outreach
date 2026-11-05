@@ -43,7 +43,7 @@ def outbox(monkeypatch):
     sent = Outbox()
     state = {"fail": None}
 
-    def fake_deliver(msg, to_email):
+    def fake_deliver(msg, to_email, mailbox=None):
         if state["fail"]:
             raise state["fail"]
         sent.append((to_email, message_from_string(msg.as_string())))
