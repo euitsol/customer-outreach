@@ -11,6 +11,12 @@ from app.views.common import db
 
 bp = Blueprint("tracking", __name__)
 
+def client_ip():
+    """Address that requested the pixel: the first X-Forwarded-For entry (we sit behind a proxy)."""
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return (forwarded or request.headers.get("X-Real-IP") or request.remote_addr or "")[:64]
+
+
 PIXEL_GIF = bytes.fromhex(
     "47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b"
 )
@@ -30,7 +36,8 @@ def track_open(token):
     # ignore the instant "open" caused by mail servers scanning the message on arrival
     scanner = sent_at is not None and utcnow() - sent_at < timedelta(seconds=8)
     if enrollment_id and not scanner:
-        s.add(Event(enrollment_id=enrollment_id, stage=stage, type="opened"))
+        ip = client_ip()
+        s.add(Event(enrollment_id=enrollment_id, stage=stage, type="opened", detail=f"IP {ip}" if ip else None))
         e = s.get(Enrollment, enrollment_id)
         if e and e.person:
             people_svc.touch(e.person)
