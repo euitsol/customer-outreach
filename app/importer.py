@@ -43,7 +43,8 @@ def step_targets(n_steps):
     for n in range(1, max(n_steps, 4) + 1):
         out += [(f"step{n}_subject", f"Stage {n}: subject"),
                 (f"step{n}_body", f"Stage {n}: email body"),
-                (f"step{n}_date", f"Stage {n}: send date")]
+                (f"step{n}_date", f"Stage {n}: send date"),
+                (f"step{n}_mailbox", f"Stage {n}: send from mailbox")]
     return out
 
 
@@ -153,6 +154,12 @@ def guess_target(header):
     m = re.fullmatch(r"followup(\d+)(body|text|message|email)?", c)
     if m:
         return f"step{int(m.group(1)) + 1}_body"
+    m = re.fullmatch(r"(?:email|mail|stage|step)(\d+)(mailbox|sendfrom|from)", c)
+    if m:
+        return f"step{int(m.group(1))}_mailbox"
+    m = re.fullmatch(r"followup(\d+)(mailbox|sendfrom|from)", c)
+    if m:
+        return f"step{int(m.group(1)) + 1}_mailbox"
     m = re.fullmatch(r"followup(\d+)(subject|subjectline)", c)
     if m:
         return f"step{int(m.group(1)) + 1}_subject"
@@ -161,6 +168,7 @@ def guess_target(header):
         return f"step{int(m.group(1)) + 1}_date"
     simple = {
         "subject": "step1_subject", "subjectline": "step1_subject",
+        "mailbox": "step1_mailbox", "sendfrom": "step1_mailbox",
         "firstname": "first_name", "first": "first_name", "fname": "first_name", "givenname": "first_name",
         "lastname": "last_name", "last": "last_name", "surname": "last_name", "lname": "last_name",
         "name": "full_name", "fullname": "full_name", "contactname": "full_name",
@@ -277,8 +285,28 @@ def parse_rows(rows, headers, mapping, custom_as_fields=True):
     return parsed, errors
 
 
+def resolve_mailboxes(session, parsed):
+    """Turn 'send from mailbox' cells (email address or id) into mailbox ids; unknown ones stop the import."""
+    from app import mailboxes
+    cache = {}
+    for rec in parsed:
+        for idx, st in rec["steps"].items():
+            val = st.get("mailbox")
+            if val is None or isinstance(val, int):
+                continue
+            key = str(val).strip().lower()
+            if key not in cache:
+                mb = mailboxes.find(session, key)
+                cache[key] = mb.id if mb else None
+            if cache[key] is None:
+                raise ValueError(f"Row {rec['row']}: there is no mailbox '{val}' (use the mailbox's email address "
+                                 "from Workspace > Mailboxes).")
+            st["mailbox"] = cache[key]
+
+
 def analyse(session, parsed, campaign, mode="upsert"):
     """Dry run: classify every row without writing."""
+    resolve_mailboxes(session, parsed)
     existing = {}
     if campaign is not None and campaign.id:
         existing = {e.email.lower(): e for e in session.query(Enrollment).filter(Enrollment.campaign_id == campaign.id)}
@@ -302,7 +330,7 @@ def analyse(session, parsed, campaign, mode="upsert"):
             stats["skip_missing"] += 1
             continue
         stats["updates" if exists else "creates"] += 1
-        if any(s.get("body") or s.get("subject") for s in rec["steps"].values()):
+        if any(s.get("body") or s.get("subject") or s.get("mailbox") for s in rec["steps"].values()):
             stats["customised"] += 1
         plan.append((rec, existing.get(e)))
     return plan, stats
@@ -351,7 +379,7 @@ def apply_plan(session, campaign, plan, settings=None):
                                                        Activity.body == note).first():
             activities_svc.log(session, kind="note", subject="Note (import)", body=note, person_id=person.id)
         for idx, data in rec["steps"].items():
-            if not (data.get("subject") or data.get("body") or data.get("date")):
+            if not (data.get("subject") or data.get("body") or data.get("date") or data.get("mailbox")):
                 continue
             msg = get_or_create_message(session, enrollment, steps[idx])
             if msg.status == "sent":
@@ -361,6 +389,8 @@ def apply_plan(session, campaign, plan, settings=None):
                 msg.subject = data["subject"]
             if data.get("body"):
                 msg.body = data["body"]
+            if data.get("mailbox"):
+                msg.mailbox_id = data["mailbox"]
             if data.get("date"):
                 midnight = datetime.combine(data["date"], datetime.min.time())
                 msg.due_at = app_settings.local_to_utc(midnight, settings) if settings else midnight

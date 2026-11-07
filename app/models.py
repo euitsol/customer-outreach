@@ -626,7 +626,7 @@ class Message(Base):
     next_attempt_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     message_id = Column(String(300), index=True)        # RFC Message-ID (reply matching)
-    # Sent from. No index on purpose: released migration v0002 builds this table's model indexes.
+    # Sent from (on a pending email: the mailbox chosen for it). No index on purpose: released migration v0002 builds this table's model indexes.
     mailbox_id = Column(Integer, ForeignKey("mailboxes.id", ondelete="SET NULL"))
     sent_subject = Column(Text)                         # exact snapshot of what went out
     sent_body = Column(Text)
@@ -638,6 +638,7 @@ class Message(Base):
 
     enrollment = relationship("Enrollment", back_populates="messages")
     step = relationship("CampaignStep")
+    mailbox = relationship("Mailbox")
 
     __table_args__ = (UniqueConstraint("enrollment_id", "step_id", name="uq_messages_enrollment_step"),)
 

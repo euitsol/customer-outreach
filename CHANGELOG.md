@@ -6,6 +6,11 @@
 - **In-app help** in English and Bengali (বাংলা): a guide for every module under *Help & guides*, and a
   **Help** button on every page (English / বাংলা) that opens the guide for the page you are on.
   Pages are Markdown files in `app/help/` rendered with the new `Markdown` dependency.
+- **Mailbox per email**: one campaign email can name its own sending mailbox (*Send from* on the
+  person's stage, or an `Email 1 mailbox` / `Follow-up 1 mailbox` import column, also via the API import).
+  It wins over the campaign's rotation, waits for the next day when that mailbox is at its daily limit,
+  and falls back to the rotation when the mailbox is disabled. The Outbox and email pages show the mailbox.
+  No database change.
 - REST API `POST /campaigns/import`: the Import page as an API call (draft campaign, people, per-person
   stage text and dates from CSV text; `dry_run` to preview).
 

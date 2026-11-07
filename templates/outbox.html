@@ -38,7 +38,7 @@
     <div class="table-wrap"><table class="tbl">
       <thead><tr>
         {% if view != 'upcoming' %}<th class="check"><input type="checkbox" id="check-all"></th>{% endif %}
-        <th>Person</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th>
+        <th>Person</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th><th>Mailbox</th>
         {% if view == 'upcoming' %}<th>Scheduled</th><th></th>
         {% elif view == 'queued' %}<th>State</th><th>Queued</th>
         {% else %}<th>Error</th><th class="num">Attempts</th><th>Next auto-retry</th>{% endif %}
@@ -50,6 +50,8 @@
           <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}">{{ ct.email }}</a><div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
           {% if not scoped %}<td>{{ r.camp.name }}</td>{% endif %}
           <td class="nowrap">{% if r.step %}{{ r.step.position }}. {{ r.step.name }}{% endif %}</td>
+          {% if view == 'upcoming' %}<td>{{ r.mailbox[0] or '-' }}<div class="sub">{{ r.mailbox[1] }}</div></td>
+          {% else %}<td>{{ r.msg.mailbox.email if r.msg.mailbox else 'automatic' }}</td>{% endif %}
           {% if view == 'upcoming' %}
             <td class="nowrap">{{ pill('due' if (not r.due or r.due <= now) else 'scheduled', 'Now' if not r.due else (r.due|dt)) }} <span class="muted small">{{ r.due|when if r.due and r.due > now }}</span></td>
             <td class="right"><a class="btn btn-sm" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}#stage-{{ r.step.position if r.step else 1 }}">Edit</a></td>

@@ -43,6 +43,7 @@
           {% elif r.state == 'failed' %}failed ({{ m.attempts }}/{{ s.retry_max }} attempts){% if m.next_attempt_at and m.attempts < s.retry_max %} · auto-retry {{ m.next_attempt_at|ago }}{% endif %}
           {% elif r.state in ('due','scheduled') %}{{ 'due now' if r.state == 'due' else 'scheduled ' ~ (r.due|dt) }}
           {% elif r.state == 'upcoming' %}waits {{ st.delay_hours|delay }} after stage {{ st.position - 1 }}{% endif %}
+          {% if m and m.mailbox %} · from {{ m.mailbox.email }}{% endif %}
         </span>
       </div>
       <div class="stage-body">
@@ -65,6 +66,11 @@
               <label class="field"><span class="lbl">Send on / after <span class="faint">({{ s.timezone }})</span></span>
                 <input type="datetime-local" name="due_at" value="{{ due_input(m.due_at, s) if m and m.due_at else '' }}">
                 <div class="hint">Empty = {{ st.delay_hours|delay }} after the previous stage.</div></label>
+              <label class="field"><span class="lbl">Send from</span>
+                <select name="mailbox_id"><option value="">Automatic (campaign rotation)</option>
+                  {% for mb in mailboxes %}<option value="{{ mb.id }}" {{ 'selected' if m and m.mailbox_id == mb.id }}>{{ mb.email }}{% if mb.status != 'active' %} (disabled){% endif %}{% if mb.daily_limit %} · max {{ mb.daily_limit }}/day{% endif %}</option>{% endfor %}
+                </select>
+                <div class="hint">A chosen mailbox waits for the next day when it reaches its daily limit.</div></label>
             </div>
             <div class="form-actions" style="margin-top:12px">
               <button class="btn btn-primary btn-sm">Save</button>
@@ -81,7 +87,7 @@
               <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="{{ 'retry' if r.state == 'failed' else 'send_now' }}"><button class="btn btn-sm btn-primary" data-confirm="Send stage {{ st.position }} to {{ c.email }} now (skips the wait; still paced by your delay and daily limit)?">{{ icon('send') }} {{ 'Retry now' if r.state == 'failed' else 'Send now' }}</button></form>
               <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="skip"><button class="btn btn-sm" data-confirm="Skip stage {{ st.position }} for this contact?">Skip stage</button></form>
             {% endif %}
-            {% if r.custom or (m and m.due_at) %}
+            {% if r.custom or (m and (m.due_at or m.mailbox_id)) %}
               <form method="post" action="{{ url_for('enrollments.stage_action', enrollment_id=c.id, step_id=st.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="clear_custom"><button class="btn btn-sm btn-ghost">Clear custom text &amp; date</button></form>
             {% endif %}
           </div>

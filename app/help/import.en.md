@@ -23,3 +23,4 @@ Bring in a CSV or Excel list of people.
 * **Download example CSV** shows every supported column.
 * After a campaign import, review the sequence in [Campaigns](/help/campaigns).
 * Imported people appear under [People](/help/people); campaign members under [Enrollments](/help/enrollments).
+* `Email 1 mailbox`, `Follow-up 1 mailbox`, ... (the mailbox's email address): send that email from a particular mailbox. An unknown address stops the import with a message.

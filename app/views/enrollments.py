@@ -10,7 +10,7 @@ from app.clock import utcnow
 from app.crm import people as people_svc
 from app.importer import export_csv
 from app.merge import slug
-from app.models import Campaign, Enrollment, Event, Person, Tag
+from app.models import Campaign, Enrollment, Event, Mailbox, Person, Tag
 from app.queries import enrollment_query, enrollment_status, metrics_for, sort_query
 from app.sender import mark_bounced, render_for
 from app.services import (
@@ -186,7 +186,7 @@ def detail(enrollment_id):
         tags=", ".join(t.name for t in e.tags), custom_text=custom_to_text(e), status=enrollment_status(e, len(steps)),
         metrics=metrics_for(sess, [e.id])[e.id], others=others,
         campaigns=sess.query(Campaign).order_by(Campaign.name).all(), s=s, due_input=app_settings.to_local_input,
-        nsteps=len(steps))
+        nsteps=len(steps), mailboxes=sess.query(Mailbox).order_by(Mailbox.id).all())
 
 
 @bp.route("/enrollments/<int:enrollment_id>/edit", methods=["POST"])
@@ -269,6 +269,9 @@ def stage_save(enrollment_id, step_id):
     due = request.form.get("due_at")
     if due is not None and m.status != "sent":
         m.due_at = app_settings.parse_local_input(due, settings_now())
+    if "mailbox_id" in request.form and m.status != "sent":
+        mb_id = request.form.get("mailbox_id", "")
+        m.mailbox_id = int(mb_id) if mb_id.isdigit() and sess.get(Mailbox, int(mb_id)) else None
     recompute_enrollment(sess, e, steps)
     sess.commit()
     ok(f"Stage {st.position} saved for {e.email}.")
@@ -305,7 +308,7 @@ def stage_action(enrollment_id, step_id):
         ok("Cancelled.")
     elif action == "clear_custom":
         if m and m.status != "sent":
-            m.subject = m.body = m.due_at = None
+            m.subject = m.body = m.due_at = m.mailbox_id = None
         recompute_enrollment(sess, e, steps)
         sess.commit()
         ok("Custom content removed; the campaign template will be used.")

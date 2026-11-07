@@ -135,7 +135,7 @@ people, deals, notes (including notes on its people), and tasks. Deleting a comp
    - an existing campaign, or a new one (people are added **and** enrolled).
 2. **Map columns.** The importer guesses: Email, First/Last name, Full name, Company, Company website,
    Job title, Phone, Priority, Tags, Notes, "Send?" (Send / Do not send / Verify), per-stage subject /
-   body / date (`stage2_body`, "Follow-up 1", ...). Any other column becomes a **merge field**
+   body / date / mailbox (`stage2_body`, "Follow-up 1", "Email 1 mailbox", ...). Any other column becomes a **merge field**
    (campaign import) or a **custom value on the person** (CRM-only import).
 3. **Preview**: how many new / updated / skipped, and every row with a problem (bad email, bad date).
 4. **Import.** Existing people (same email) are updated, never duplicated. Empty cells never erase data.

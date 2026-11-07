@@ -91,10 +91,14 @@ def mapping(token):
 
     if not problems:
         parsed, errors = importer.parse_rows(rows, headers, mapping_, extra_as_custom)
-        if crm_only:
-            plan, stats = importer.analyse_people(sess, parsed, mode)
-        else:
-            plan, stats = importer.analyse(sess, parsed, camp, mode)
+        try:
+            if crm_only:
+                plan, stats = importer.analyse_people(sess, parsed, mode)
+            else:
+                plan, stats = importer.analyse(sess, parsed, camp, mode)
+        except ValueError as e:          # e.g. an unknown mailbox in a "send from" column
+            problems.append(str(e))
+    if not problems:
         preview = dict(stats=stats, errors=errors[:100], error_count=len(errors), total=len(rows),
                        sample=[(r["email"], r.get("first_name"), r.get("company"),
                                 sorted(r["steps"]), existing is not None) for r, existing in plan[:8]])

@@ -49,7 +49,8 @@ def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, messa
               s, now, permanent=True)
         return "failed", message.last_error
 
-    mailbox = mailboxes.choose(session, campaign, enrollment, s, enforce_limit=not manual)
+    chosen = message.mailbox_id if message.status != "sent" else None
+    mailbox = mailboxes.choose(session, campaign, enrollment, s, enforce_limit=not manual, mailbox_id=chosen)
     if mailbox is None:
         message.last_error = ("No mailbox is available to send from. Add or enable one under "
                               "Workspace > Mailboxes, or check this campaign's mailbox choice.")

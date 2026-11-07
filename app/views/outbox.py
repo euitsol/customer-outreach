@@ -6,9 +6,9 @@ from flask import Blueprint, Response, abort, render_template, request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
-from app import settings as app_settings
+from app import mailboxes, settings as app_settings
 from app.clock import utcnow
-from app.models import Campaign, CampaignStep, Company, Enrollment, Event, Message, Person
+from app.models import Campaign, CampaignStep, Company, Enrollment, Event, Mailbox, Message, Person
 from app.sender import render_for
 from app.services import email_consent_ok, not_suppressed, sendable, skip_stage, steps_of
 from app.views.common import back, db, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn
@@ -69,11 +69,29 @@ def _outbox_context(campaign=None):
 
     rows = []
     if view == "upcoming":
-        cache = {}
+        cache, auto = {}, {}
+        names = {m.id: m.email for m in sess.query(Mailbox)}
+        ids = [c.id for c in page.items]
+        chosen = {}
+        for eid, pos, mb in (sess.query(Message.enrollment_id, Message.position, Message.mailbox_id)
+                             .filter(Message.enrollment_id.in_(ids), Message.mailbox_id.isnot(None))
+                             .order_by(Message.position)):
+            chosen[(eid, pos)] = mb
+        sent_before = dict(sess.query(Message.enrollment_id, func.max(Message.position))
+                           .filter(Message.enrollment_id.in_(ids), Message.status == "sent").group_by(Message.enrollment_id))
         for c in page.items:
             steps = cache.setdefault(c.campaign_id, steps_of(sess, c.campaign_id))
             nxt = next((x for x in steps if x.position == (c.stage or 0) + 1), None)
-            rows.append(dict(enrollment=c, step=nxt, due=c.next_due_at, camp=c.campaign))
+            pos = nxt.position if nxt else None
+            if pos and chosen.get((c.id, pos)) and (sent_before.get(c.id) or 0) < pos:
+                mbox = (names.get(chosen[(c.id, pos)]), "chosen for this email")
+            elif sent_before.get(c.id):
+                mbox = (names.get(chosen.get((c.id, sent_before[c.id]))), "same as the earlier email")
+            else:
+                if c.campaign_id not in auto:
+                    auto[c.campaign_id] = ", ".join(m.email for m in mailboxes.eligible(sess, c.campaign)) or "no mailbox"
+                mbox = (auto[c.campaign_id], "automatic rotation")
+            rows.append(dict(enrollment=c, step=nxt, due=c.next_due_at, camp=c.campaign, mailbox=mbox))
     else:
         for m in page.items:
             rows.append(dict(msg=m, enrollment=m.enrollment, step=m.step, camp=m.enrollment.campaign))

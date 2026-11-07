@@ -33,3 +33,5 @@ Click a message to see exactly what was sent or will be sent.
 ## Good to know
 
 Failures retry automatically a few times. After that, use **Retry**. The number of attempts and the pause between them are set in [Sending settings](/help/settings).
+
+* **Mailbox** column: the mailbox each email goes out from (chosen for that email, the same as the person's earlier email, or the campaign's automatic rotation).

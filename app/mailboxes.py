@@ -3,7 +3,8 @@
 The mailbox flagged `from_env` uses SMTP_* / IMAP_* from .env; every other row has its own credentials.
 A campaign rotates through the mailboxes listed in `campaign.mailbox_ids` (none listed = the default
 mailbox only, so adding a mailbox never changes what an existing campaign sends from). Follow-ups stay on
-the mailbox that sent the previous email to that person.
+the mailbox that sent the previous email to that person. A single pending email can name its own mailbox
+(`Message.mailbox_id` before it is sent): that choice wins over rotation while the mailbox can send.
 """
 import imaplib
 
@@ -105,14 +106,20 @@ def previous_mailbox_id(session, enrollment):
     return row[0] if row else None
 
 
-def choose(session, campaign, enrollment, s, enforce_limit=True):
+def choose(session, campaign, enrollment, s, enforce_limit=True, mailbox_id=None):
     """Mailbox for the next campaign email, or None.
 
-    Stay on the mailbox used for this person before; otherwise the eligible mailbox that has sent the
-    fewest emails today. enforce_limit=False (send now / retry by hand) may exceed a mailbox's daily limit.
+    A mailbox chosen for this email (mailbox_id) is used if it is active and can send (None while it is at
+    its daily limit). Otherwise: stay on the mailbox used for this person before, else the eligible mailbox
+    that has sent the fewest emails today. enforce_limit=False (send now / retry by hand) may exceed a
+    mailbox's daily limit.
     """
-    boxes = eligible(session, campaign)
     counts = sent_today(session, s)
+    if mailbox_id:
+        pinned = next((m for m in usable(session) if m.id == mailbox_id), None)
+        if pinned:
+            return pinned if (not enforce_limit or has_room(pinned, counts)) else None
+    boxes = eligible(session, campaign)
     room = [m for m in boxes if has_room(m, counts)]
     pool = room or ([] if enforce_limit else boxes)
     if not pool:
@@ -122,6 +129,22 @@ def choose(session, campaign, enrollment, s, enforce_limit=True):
         if m.id == prev:
             return m
     return min(pool, key=lambda m: (counts.get(m.id, 0), m.id))
+
+
+def full_today(session, s):
+    """Ids of mailboxes that reached their daily limit today."""
+    counts = sent_today(session, s)
+    return [m.id for m in session.query(Mailbox).filter(Mailbox.daily_limit.isnot(None)) if not has_room(m, counts)]
+
+
+def find(session, value):
+    """Mailbox by email address or id (as written in an import file), or None."""
+    v = str(value or "").strip().lstrip("#").lower()
+    if not v:
+        return None
+    if v.isdigit():
+        return session.get(Mailbox, int(v))
+    return session.query(Mailbox).filter(func.lower(Mailbox.email) == v).first()
 
 
 def for_conversation(session, conv, mailbox_id=None):

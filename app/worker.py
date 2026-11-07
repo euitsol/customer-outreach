@@ -64,6 +64,11 @@ def pick_auto(session, s, now):
                  or_(Enrollment.next_due_at.is_(None), Enrollment.next_due_at <= now),
                  or_(Campaign.start_at.is_(None), Campaign.start_at <= now),
                  not_suppressed(), email_consent_ok(), ~blocked_msg))
+    full = mailboxes.full_today(session, s)
+    if full:
+        q = q.filter(~exists().where(and_(Message.enrollment_id == Enrollment.id,
+                                          Message.position == Enrollment.stage + 1,
+                                          Message.status != "sent", Message.mailbox_id.in_(full))))
     capped = capped_campaigns(session, s) + mailboxes.campaigns_without_room(session, s)
     if capped:
         q = q.filter(Enrollment.campaign_id.notin_(capped))

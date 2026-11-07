@@ -35,6 +35,7 @@ Open the campaign, then **Settings > Send from**, and tick the mailboxes it may 
 
 * Nothing ticked: the campaign sends from the first active mailbox only. Adding a new mailbox therefore never changes a running campaign.
 * Several ticked: each email goes out from the ticked mailbox that has sent the fewest emails today. Follow-ups to a person stay on the mailbox that wrote to them first, so the conversation looks like one thread.
+* One email can use a particular mailbox: choose it under **Send from** on the person's stage (Enrollments > the person), or add a column such as `Email 1 mailbox` / `Follow-up 1 mailbox` (the mailbox's email address) when importing. That choice wins over the rotation; if that mailbox is at its daily limit the email waits for the next day, and if it is disabled the rotation is used. The Outbox shows the mailbox for every email.
 * If every ticked mailbox has reached its daily limit, the campaign waits until after midnight. If none of the ticked mailboxes is active, it does not send and the Settings tab says so.
 
 ## One-to-one emails

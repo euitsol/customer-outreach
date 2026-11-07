@@ -506,3 +506,85 @@ def test_labelled_links_become_anchors_and_other_markup_is_escaped():
     assert f"+353 86 821 9885 ({url})" in plain
     tracked, _ = mailer._links(body, lambda u: "https://t.test/c/1")
     assert "+353 86 821 9885 (https://t.test/c/1)" in tracked
+
+
+# ---------------------------------------------------------------------- a mailbox chosen for one email
+
+def pin(db, enrollment, step, mailbox):
+    msg = Message(enrollment_id=enrollment.id, step_id=step.id, position=step.position, status="pending",
+                  mailbox_id=mailbox.id)
+    db.add(msg)
+    db.commit()
+    return msg
+
+
+def test_mailbox_chosen_for_one_email_wins_over_rotation(db, outbox):
+    a, b = new_mailbox(db), new_mailbox(db)
+    camp, steps, (e1, e2) = new_campaign(db, [a.id], people=2)
+    pin(db, e1, steps[0], b)
+    assert send_one(db, e1, steps[0], camp, steps)[0] == "sent"
+    assert send_one(db, e2, steps[0], camp, steps)[0] == "sent"
+    assert db.query(Message).filter_by(enrollment_id=e1.id, position=1).one().mailbox_id == b.id
+    assert db.query(Message).filter_by(enrollment_id=e2.id, position=1).one().mailbox_id == a.id
+
+
+def test_full_chosen_mailbox_waits_and_others_keep_sending(db, outbox):
+    a, full = new_mailbox(db), new_mailbox(db, daily_limit=1)
+    camp, steps, people = new_campaign(db, [a.id, full.id], people=3)
+    s = app_settings.load(db)
+    pin(db, people[0], steps[0], full)
+    assert send_one(db, people[0], steps[0], camp, steps)[0] == "sent"    # uses up the limit
+    pin(db, people[1], steps[0], full)
+    assert mailboxes.choose(db, camp, people[1], s, mailbox_id=full.id) is None
+    picked = set()
+    for _ in range(5):
+        nxt = worker.pick_auto(db, s, utcnow())
+        if nxt is None or nxt.campaign_id != camp.id:
+            break
+        picked.add(nxt.id)
+        send_one(db, nxt, steps[0], camp, steps)
+    assert people[1].id not in picked and people[2].id in picked
+
+
+def test_disabled_chosen_mailbox_falls_back_to_rotation(db, outbox):
+    a, off = new_mailbox(db), new_mailbox(db, status="disabled")
+    camp, steps, (e,) = new_campaign(db, [a.id], people=1)
+    pin(db, e, steps[0], off)
+    assert send_one(db, e, steps[0], camp, steps)[0] == "sent"
+    assert db.query(Message).filter_by(enrollment_id=e.id, position=1).one().mailbox_id == a.id
+
+
+def test_import_sets_the_mailbox_per_email(db):
+    from app.crm import actions
+    a, b = new_mailbox(db), new_mailbox(db)
+    camp, steps, (e1, e2) = new_campaign(db, [a.id], people=2, status="draft")
+    csv_text = ("Email,Email 1 mailbox,Follow-up 1 mailbox\n"
+                f"{e1.email},{b.email},\n{e2.email},,{b.id}\n")
+    actor = audit.Actor("system", label="test")
+    res = actions.import_campaign(db, actor, camp.name, csv_text)
+    db.commit()
+    assert res["mapping"]["Email 1 mailbox"] == "step1_mailbox" and res["updated"] == 2
+    assert db.query(Message).filter_by(enrollment_id=e1.id, position=1).one().mailbox_id == b.id
+    assert db.query(Message).filter_by(enrollment_id=e2.id, position=2).one().mailbox_id == b.id
+    with pytest.raises(ValueError, match="no mailbox"):
+        actions.import_campaign(db, actor, camp.name, f"Email,Email 1 mailbox\n{e1.email},nobody@nowhere.test\n",
+                                dry_run=True)
+
+
+def test_mailbox_is_shown_and_editable_in_the_panel(client, db):
+    a, b = new_mailbox(db), new_mailbox(db)
+    camp, steps, (e,) = new_campaign(db, [a.id], people=1)
+    assert a.email in client.get(f"/outbox?campaign={camp.id}").get_data(as_text=True)    # automatic rotation
+    r = post(client, f"/enrollments/{e.id}/stage/{steps[0].id}", subject="", body="", mailbox_id=str(b.id))
+    assert r.status_code == 200 and "Send from" in r.get_data(as_text=True)
+    db.expire_all()
+    msg = db.query(Message).filter_by(enrollment_id=e.id, position=1).one()
+    assert msg.mailbox_id == b.id
+    page = client.get(f"/outbox?campaign={camp.id}").get_data(as_text=True)
+    assert b.email in page and "chosen for this email" in page
+    for view in ("queued", "failed"):
+        assert client.get(f"/outbox?view={view}").status_code == 200
+    assert "will send from" in client.get(f"/messages/{msg.id}").get_data(as_text=True)
+    post(client, f"/enrollments/{e.id}/stage/{steps[0].id}", subject="", body="", mailbox_id="")
+    db.expire_all()
+    assert db.query(Message).filter_by(enrollment_id=e.id, position=1).one().mailbox_id is None
