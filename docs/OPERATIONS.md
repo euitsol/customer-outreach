@@ -32,6 +32,7 @@ advisory lock, so exactly one container migrates) and default rows.
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | for WhatsApp | Twilio credentials; the token also verifies webhook signatures (unsigned webhooks are rejected) |
 | `TWILIO_WHATSAPP_FROM` | for WhatsApp | Your WhatsApp sender, `whatsapp:+14155238886` |
 | `TWILIO_DAILY_LIMIT` | no | WhatsApp campaign messages per day (default 250, the starting Meta tier; raise it when Meta raises your tier) |
+| `TWILIO_COOLDOWN_DAYS` | no | Days a person waits between messages from two different WhatsApp campaigns (default 7, 0 = off). Follow-up stages of the same campaign are not delayed |
 | `TWILIO_MESSAGING_SERVICE_SID` | no | Send through a Messaging Service (`MG...`) instead of the single sender |
 | `MCP_HOST`, `MCP_PORT` | no | MCP bind address (`0.0.0.0:8092` inside the container) |
 | `MCP_ALLOWED_HOSTS` | no | Comma separated Host values for DNS-rebinding protection |

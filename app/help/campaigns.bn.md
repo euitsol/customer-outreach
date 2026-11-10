@@ -31,7 +31,7 @@
 * **Twilio Content SID**: Twilio-তে অনুমোদিত template-এর `HX...` আইডি ([Templates](/help/templates))।
 * **Template values**: template-এর `{{1}}`, `{{2}}`... placeholder-এ যা বসবে, `|` দিয়ে আলাদা করে, যেমন `{{first_name|there}} | {{company}}`। ফাঁকা মান `-` হিসেবে যায়।
 
-[People](/help/people) তালিকা থেকে মানুষদের enroll করুন (বেছে নিয়ে *Add to campaign*): আন্তর্জাতিক ফরম্যাটে ফোন নম্বর লাগবে; যারা WhatsApp opt-out করেছেন, do-not-contact বা block list-এ আছেন তারা বাদ পড়ে। কয়েক সেকেন্ড পরপর পাঠানো হয় এবং দৈনিক সীমা আছে (`TWILIO_DAILY_LIMIT`, ডিফল্ট ২৫০)। উত্তর এলে সিকোয়েন্স থামে; read receipt *opened* হিসেবে গণ্য হয়। মেসেজ [Inbox](/help/inbox)-এ ব্যক্তির WhatsApp থ্রেডেও দেখা যায়।
+[People](/help/people) তালিকা থেকে মানুষদের enroll করুন (বেছে নিয়ে *Add to campaign*): আন্তর্জাতিক ফরম্যাটে ফোন নম্বর লাগবে; যারা WhatsApp opt-out করেছেন, do-not-contact বা block list-এ আছেন তারা বাদ পড়ে। কয়েক সেকেন্ড পরপর পাঠানো হয় এবং দৈনিক সীমা আছে (`TWILIO_DAILY_LIMIT`, ডিফল্ট ২৫০)। উত্তর এলে সিকোয়েন্স থামে; read receipt *opened* হিসেবে গণ্য হয়। মেসেজ [Inbox](/help/inbox)-এ ব্যক্তির WhatsApp থ্রেডেও দেখা যায়। একজনের সব WhatsApp মেসেজ একই থ্রেডে জমা হয়, তাই ক্যাম্পেইন ছোট রাখুন (একটি মেসেজ ও বড়জোর একটি ফলো-আপ); আর অন্য কোনো WhatsApp ক্যাম্পেইন থেকে সম্প্রতি মেসেজ পাওয়া ব্যক্তি পরের ক্যাম্পেইনের আগে (ডিফল্ট ৭ দিন) অপেক্ষা করেন।
 
 ## ব্যক্তিভিত্তিক পরিবর্তন
 

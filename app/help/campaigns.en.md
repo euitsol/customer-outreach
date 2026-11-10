@@ -27,7 +27,7 @@ Choose **WhatsApp** as the channel when you create a campaign (it can't be chang
 * **Twilio Content SID**: the `HX...` id of a template approved in Twilio ([Templates](/help/templates)).
 * **Template values**: what goes into the template's `{{1}}`, `{{2}}`... placeholders, separated by `|`, for example `{{first_name|there}} | {{company}}`. An empty value is sent as `-`.
 
-Enroll people from the [People](/help/people) list (select people, *Add to campaign*): they need a phone number in international format; people who opted out of WhatsApp, are do-not-contact or are on the block list are skipped. Sends are paced a few seconds apart and capped per day (`TWILIO_DAILY_LIMIT`, default 250). A reply stops the sequence; a read receipt counts as an *opened*. Messages also appear in the person's WhatsApp thread in the [Inbox](/help/inbox).
+Enroll people from the [People](/help/people) list (select people, *Add to campaign*): they need a phone number in international format; people who opted out of WhatsApp, are do-not-contact or are on the block list are skipped. Sends are paced a few seconds apart and capped per day (`TWILIO_DAILY_LIMIT`, default 250). A reply stops the sequence; a read receipt counts as an *opened*. Messages also appear in the person's WhatsApp thread in the [Inbox](/help/inbox). All WhatsApp messages to one person share a single thread, so keep campaigns short (one message and at most one follow-up), and note that a person who just received a message from another WhatsApp campaign waits (7 days by default) before the next campaign messages them.
 
 ## Overview tab
 

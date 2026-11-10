@@ -8,6 +8,8 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **WhatsApp cooldown between campaigns**: a person who got a message from one WhatsApp campaign waits
+  `TWILIO_COOLDOWN_DAYS` (default 7) before another WhatsApp campaign messages them, so one thread isn't flooded.
 - **WhatsApp in the Outbox and Activity pages**: channel filter and badge, WhatsApp rows in *Scheduled* use the
   WhatsApp consent / phone block-list rules, new *Delivered* event, read receipts shown as *Opened*, messages Twilio
   could not deliver land in *Outbox > Failed* with the reason, and the message page shows template, delivery and read times.

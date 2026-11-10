@@ -2,8 +2,10 @@ import random
 import threading
 import time
 import traceback
+from datetime import timedelta
 
 from sqlalchemy import and_, case, exists, func, or_, select
+from sqlalchemy.orm import aliased
 
 from app import config, mailboxes, settings as app_settings
 from app.channels import whatsapp
@@ -81,6 +83,14 @@ def pick_auto(session, s, now, channel="email"):
                  ~blocked_msg))
     if channel == WA:
         q = q.filter(phone_not_suppressed(), wa_consent_ok())
+        if config.TWILIO_COOLDOWN_DAYS > 0:
+            # one WhatsApp thread per person: wait while another WhatsApp campaign messaged them recently
+            other_e, other_c = aliased(Enrollment), aliased(Campaign)
+            q = q.filter(~exists().where(and_(
+                other_e.person_id == Enrollment.person_id, other_e.campaign_id != Enrollment.campaign_id,
+                other_c.id == other_e.campaign_id, other_c.channel == WA,
+                Message.enrollment_id == other_e.id, Message.status == "sent",
+                Message.sent_at >= now - timedelta(days=config.TWILIO_COOLDOWN_DAYS))))
         capped = capped_campaigns(session, s)
     else:
         q = q.filter(not_suppressed(), email_consent_ok())
