@@ -6,8 +6,12 @@
 
 <div class="card card-pad mb2" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
   <div class="grow">
+    {% if c.channel == 'whatsapp' %}
+    <b>Design the sequence.</b> <span class="muted">Each stage sends one approved WhatsApp template (created in Twilio's Content Template Builder). Enter its Content SID and the values for its placeholders; people are enrolled from the <a href="{{ url_for('people.index') }}">People list</a>. Outside a 24-hour conversation only approved templates can be sent.</span>
+    {% else %}
     <b>Design the sequence.</b> <span class="muted">Each stage is one email. Write a template here, and optionally give individual people their own text per stage
     (via <a href="{{ url_for('imports.upload', campaign=c.id) }}">CSV import</a> or on the contact page). Contacts without their own text get the template.</span>
+    {% endif %}
   </div>
   <form method="post" action="{{ url_for('campaigns.step_add', cid=c.id) }}" class="row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -16,11 +20,12 @@
   </form>
 </div>
 
-{% if not smtp_ok %}<div class="banner bad">SMTP isn't configured on the server, so test emails and real sends will fail.</div>{% endif %}
+{% if c.channel == 'whatsapp' %}{% if not wa_ok %}<div class="banner bad">WhatsApp isn't connected (TWILIO_* settings), so tests and real sends will fail.</div>{% endif %}
+{% elif not smtp_ok %}<div class="banner bad">SMTP isn't configured on the server, so test emails and real sends will fail.</div>{% endif %}
 
 {% for st in steps %}
 {% if not loop.first %}
-<div class="wait-line">&darr; wait <b>{{ st.delay_hours|delay }}</b> after stage {{ st.position - 1 }} is sent, then send stage {{ st.position }}{% if not st.subject %}&nbsp;&middot; same thread (<i>Re: first subject</i>){% endif %}</div>
+<div class="wait-line">&darr; wait <b>{{ st.delay_hours|delay }}</b> after stage {{ st.position - 1 }} is sent, then send stage {{ st.position }}{% if not st.subject and c.channel != 'whatsapp' %}&nbsp;&middot; same thread (<i>Re: first subject</i>){% endif %}</div>
 {% endif %}
 <section class="stage-card" id="stage-{{ st.position }}">
   <div class="stage-top">
@@ -51,6 +56,21 @@
           </div>
           <div class="hint">{{ 'Counted from when the person was enrolled or the campaign start time.' if st.position == 1 else 'Counted from when the previous email was actually sent. Individual people can have their own date.' }}</div>
         </div>
+        {% if c.channel == 'whatsapp' %}
+        <label class="field full"><span class="lbl">Twilio Content SID</span>
+          <input type="text" name="wa_template" value="{{ st.wa_template or '' }}" placeholder="HXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+          <div class="hint">From Twilio Console &gt; Messaging &gt; Content Template Builder. The template must be approved for WhatsApp.</div>
+        </label>
+        <div class="field full">
+          <span class="lbl">Template values <span class="faint">(for {{ '{{1}}' }}, {{ '{{2}}' }}, ... in the template, separated by <code>|</code>)</span></span>
+          <textarea name="body" class="body-edit" rows="3" placeholder="{{ '{{first_name|there}}' }} | {{ '{{company}}' }}">{{ st.body or '' }}</textarea>
+          <div class="row mt1">
+            <span class="small muted">Insert:</span>
+            <div class="chips">{% for v in variables %}<button type="button" class="chip" data-var="{{ v }}">{{ '{{' }}{{ v }}{{ '}}' }}</button>{% endfor %}</div>
+          </div>
+          <div class="hint">Leave empty if the template has no placeholders. An empty value is sent as <code>-</code>, so give fallbacks like <code>{{ '{{first_name|there}}' }}</code>.</div>
+        </div>
+        {% else %}
         <label class="field full"><span class="lbl">Subject</span>
           <input type="text" name="subject" class="subject-edit" value="{{ st.subject or '' }}" placeholder="{{ 'Leave blank to reply in the same thread (Re: first subject)' if st.position > 1 else 'e.g. Quick question about {{company}}' }}">
         </label>
@@ -63,6 +83,7 @@
           </div>
           <div class="hint">Use <code>{{ '{{first_name|there}}' }}</code> to fall back to a default when a field is empty. Links are click-tracked automatically.</div>
         </div>
+        {% endif %}
       </div>
       <div class="form-actions" style="margin-top:14px">
         <button class="btn btn-primary">Save stage {{ st.position }}</button>
@@ -81,10 +102,11 @@
       <summary>Send a test of this stage</summary>
       <form method="post" action="{{ url_for('campaigns.step_test', cid=c.id, sid=st.id) }}" class="row">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="email" name="to" placeholder="you@example.com" style="max-width:280px" required>
+        {% if c.channel == 'whatsapp' %}<input type="text" name="to" placeholder="+353 87 123 4567" style="max-width:280px" required>
+        {% else %}<input type="email" name="to" placeholder="you@example.com" style="max-width:280px" required>{% endif %}
         <select name="enrollment_id" style="width:auto;max-width:240px"><option value="">Use sample data</option>{% for p in sample %}<option value="{{ p.id }}">Merge data of {{ p.email }}</option>{% endfor %}</select>
         <button class="btn" data-once="1">Send test</button>
-        <span class="hint">Sent immediately via your SMTP account, without tracking. Saved text only: save first.</span>
+        <span class="hint">{{ 'Sent immediately through Twilio to that number.' if c.channel == 'whatsapp' else 'Sent immediately via your SMTP account, without tracking.' }} Saved text only: save first.</span>
       </form>
     </details>
   </div>
@@ -94,8 +116,9 @@
 {% endfor %}
 
 <div class="card card-pad mt2 muted small">
-  <b>How sending works:</b> the worker emails one person at a time, waiting a random {{ s.min_delay }}–{{ s.max_delay }} seconds in between (change in
-  <a href="{{ url_for('admin.settings') }}">Settings</a>). After stage&nbsp;N is sent, stage&nbsp;N+1 becomes due once its wait time passes.
+  {% if c.channel == 'whatsapp' %}<b>How sending works:</b> the worker messages one person at a time, a few seconds apart, up to the daily WhatsApp limit (<code>TWILIO_DAILY_LIMIT</code>) and inside your send window. People who opted out, are marked do-not-contact or are on the block list are skipped.
+  {% else %}<b>How sending works:</b> the worker emails one person at a time, waiting a random {{ s.min_delay }}–{{ s.max_delay }} seconds in between (change in
+  <a href="{{ url_for('admin.settings') }}">Settings</a>).{% endif %} After stage&nbsp;N is sent, stage&nbsp;N+1 becomes due once its wait time passes.
   A reply, unsubscribe or bounce stops the sequence for that person (a WhatsApp reply too).
 </div>
 {% endblock %}

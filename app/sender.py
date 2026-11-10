@@ -3,8 +3,9 @@ import secrets
 from datetime import timedelta
 
 from app import mailboxes, mailer, merge
+from app.channels import whatsapp
 from app.clock import utcnow
-from app.crm import conversations
+from app.crm import conversations, normalize
 from app.mailer import SendError
 from app.models import Event
 from app.services import (
@@ -29,6 +30,72 @@ def render_for(session, enrollment, step, steps, message, campaign, s):
     ctx = merge.context_for(enrollment, sender_name)
     subj_raw, body_raw = content_for(session, enrollment, step, steps, message)
     return merge.render(subj_raw, ctx).strip(), merge.render(body_raw, ctx).strip()
+
+
+def wa_values(session, enrollment, step, steps, message, campaign, s):
+    """Template values for a WhatsApp stage: the (merged) body split on `|`. Twilio rejects empty values."""
+    ctx = merge.context_for(enrollment, campaign.sender_name or s["sender_name"])
+    _, raw = content_for(session, enrollment, step, steps, message)
+    return [merge.render(v, ctx).strip() or "-" for v in raw.split("|")] if raw.strip() else []
+
+
+def send_whatsapp_stage(session, enrollment, step, *, s, campaign=None, steps=None, message=None, now=None):
+    """Send one WhatsApp template stage to one enrollment and record the outcome.
+
+    Returns (outcome, error): 'sent' | 'failed' | 'system' ('system' = Twilio itself is unavailable or
+    rejects our credentials; nothing is counted against the message)."""
+    now = now or utcnow()
+    campaign = campaign or enrollment.campaign
+    steps = steps if steps is not None else steps_of(session, enrollment.campaign_id)
+    message = message or get_or_create_message(session, enrollment, step)
+    if not step.wa_template:
+        _fail(session, enrollment, message, "This stage has no WhatsApp template (Twilio Content SID).",
+              s, now, permanent=True)
+        return "failed", message.last_error
+    if not whatsapp.configured():
+        message.last_error = "WhatsApp is not configured (TWILIO_* settings)."
+        return "system", message.last_error
+
+    values = wa_values(session, enrollment, step, steps, message, campaign, s)
+    try:
+        sent = conversations.send(session, enrollment.person, "whatsapp", None, template=step.wa_template,
+                                  template_params=values, settings=s)
+    except conversations.SendBlocked as e:
+        _fail(session, enrollment, message, str(e), s, now, permanent=True)
+        return "failed", str(e)
+    except whatsapp.WhatsAppError as e:
+        if e.code in (20003, 20429):          # bad credentials / Twilio rate limit: try again later, don't burn the message
+            message.last_error = str(e)
+            return "system", str(e)
+        _fail(session, enrollment, message, str(e), s, now, permanent=e.permanent)
+        return "failed", str(e)
+
+    sent.sequence_message_id = message.id
+    sent.meta = {**(sent.meta or {}), "campaign_id": campaign.id, "stage": step.position}
+    message.status = "sent"
+    message.queued = False
+    message.sent_at = now
+    message.last_error = None
+    message.attempts = (message.attempts or 0) + 1
+    message.next_attempt_at = None
+    message.message_id = sent.external_id
+    message.sent_subject, message.sent_body = None, sent.body
+    if step.position > (enrollment.stage or 0):
+        enrollment.stage = step.position
+    enrollment.last_step_at = now
+    session.add(Event(enrollment_id=enrollment.id, stage=step.position, type="sent", detail=step.wa_template))
+    recompute_enrollment(session, enrollment, steps, campaign, now)
+    return "sent", None
+
+
+def send_whatsapp_test(session, step, steps, campaign, enrollment, to_number, s):
+    """Send the stage's template to any number. Touches no delivery state. Raises WhatsAppError / ValueError."""
+    wa_id = normalize.whatsapp_id(to_number)
+    if not wa_id:
+        raise ValueError("Enter the number in international format, e.g. +353 87 123 4567.")
+    if not step.wa_template:
+        raise ValueError("Save a Twilio Content SID for this stage first.")
+    whatsapp.send_template(wa_id, step.wa_template, None, wa_values(session, enrollment, step, steps, None, campaign, s))
 
 
 def send_stage(session, enrollment, step, *, s, campaign=None, steps=None, message=None, now=None):

@@ -174,6 +174,14 @@ paused, do-not-contact, or the address being on the do-not-contact list.
 - **Email activity**: every sent / opened / clicked / replied / bounced / unsubscribed event, filterable
   and exportable.
 
+### WhatsApp campaigns
+
+Pick **WhatsApp** as the channel when creating a campaign. Each stage sends an approved Twilio template: enter
+its Content SID (`HX...`) and the values for its placeholders (merge fields separated by `|`). Enroll people from
+the People list (they need a phone number; opted-out, do-not-contact and blocked numbers are skipped). Messages go
+out a few seconds apart up to the daily cap (`TWILIO_DAILY_LIMIT`, default 250), appear in the person's WhatsApp
+thread, and a reply stops the sequence. Read receipts count as opens.
+
 ## 6. The inbox: replies, email and WhatsApp
 
 ![Inbox](images/05-inbox.png)

@@ -3,12 +3,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from app import mailboxes, merge, settings as app_settings
+from app.channels import whatsapp
 from app.mailer import SendError
 from app.models import (
     Campaign, CampaignStep, Company, CustomField, Enrollment, Mailbox, Message, Person, Template,
 )
 from app.queries import campaign_summaries, daily_activity, engagement_stats, stage_stats, status_counts
-from app.sender import render_for, send_test
+from app.sender import render_for, send_test, send_whatsapp_test
 from app.services import (
     cancel_queued, create_default_steps, delete_campaign, duplicate_campaign, queue_next,
     recompute_campaign, renumber_steps, retry_failed, set_campaign_status, steps_of,
@@ -89,18 +90,22 @@ def new():
             err("A campaign with that name already exists.")
         else:
             c = Campaign(name=name, description=(request.form.get("description") or "").strip() or None,
-                         status="draft", is_active=False)
+                         status="draft", is_active=False,
+                         channel="whatsapp" if request.form.get("channel") == "whatsapp" else "email")
             sess.add(c)
             sess.flush()
             clone_from = int_arg("clone_from", None, request.form)
-            if clone_from and sess.get(Campaign, clone_from):
+            source = sess.get(Campaign, clone_from) if clone_from else None
+            if source and source.channel == c.channel:
                 for st in steps_of(sess, clone_from):
                     sess.add(CampaignStep(campaign_id=c.id, position=st.position, name=st.name,
-                                          subject=st.subject, body=st.body, delay_hours=st.delay_hours))
+                                          subject=st.subject, body=st.body, delay_hours=st.delay_hours,
+                                          wa_template=st.wa_template))
             else:
                 create_default_steps(sess, c)
             sess.commit()
-            ok("Campaign created. Write your emails, then import or enroll people.")
+            ok("Campaign created. Write your WhatsApp templates, then enroll people from the People list."
+               if c.channel == "whatsapp" else "Campaign created. Write your emails, then import or enroll people.")
             return redirect(url_for("campaigns.sequence", cid=c.id))
     others = sess.query(Campaign).order_by(Campaign.name).all()
     return render_template("campaigns/new.html", others=others, form=request.form)
@@ -123,7 +128,7 @@ def overview(cid):
     activity = daily_activity(sess, 14, cid)
     peak = max([max(d["sent"], d["opened"], d["clicked"], d["replied"]) for d in activity] + [1])
     # contacts that would fail because nothing is written for their next stage
-    first = steps[0] if steps else None
+    first = steps[0] if steps and c.channel != "whatsapp" else None
     no_content = 0
     if first:
         has_custom = (sess.query(Message.enrollment_id).filter(
@@ -144,9 +149,17 @@ def set_status(cid):
     if action == "start":
         steps = steps_of(sess, cid)
         if not steps:
-            err("Add at least one email stage before starting.")
+            err("Add at least one stage before starting.")
             return back("campaigns.sequence", cid=cid)
-        if not mailboxes.eligible(sess, c):
+        if c.channel == "whatsapp":
+            if not whatsapp.configured():
+                err("WhatsApp isn't connected. Add the TWILIO_* settings first (Workspace > Integrations).")
+                return back("campaigns.sequence", cid=cid)
+            missing = [str(x.position) for x in steps if not (x.wa_template or "").strip()]
+            if missing:
+                err("Add a Twilio Content SID to stage " + ", ".join(missing) + " before starting.")
+                return back("campaigns.sequence", cid=cid)
+        elif not mailboxes.eligible(sess, c):
             warn("This campaign has no active mailbox to send from - emails will wait until you add or enable one "
                  "(Workspace > Mailboxes).")
         set_campaign_status(c, "active")
@@ -257,7 +270,7 @@ def sequence(cid):
             unknown[st.id] = bad
     return render_template("campaigns/sequence.html", c=c, steps=steps, tab="sequence", sent_by_step=sent_by_step,
                            variables=variables, sample=sample, templates=templates, unknown=unknown,
-                           smtp_ok=bool(mailboxes.eligible(sess, c)), s=settings_now())
+                           smtp_ok=bool(mailboxes.eligible(sess, c)), wa_ok=whatsapp.configured(), s=settings_now())
 
 
 @bp.route("/campaigns/<int:cid>/steps/add", methods=["POST"])
@@ -290,6 +303,8 @@ def step_save(cid, sid):
     st.name = (request.form.get("name") or "").strip() or f"Stage {st.position}"
     st.subject = (request.form.get("subject") or "").strip() or None
     st.body = (request.form.get("body") or "").rstrip() or None
+    if c.channel == "whatsapp":
+        st.wa_template = (request.form.get("wa_template") or "").strip() or None
     days, hours = _form_int("delay_days") or 0, _form_int("delay_hours") or 0
     new_delay = days * 24 + hours
     delay_changed = new_delay != (st.delay_hours or 0)
@@ -383,6 +398,15 @@ def step_test(cid, sid):
     c = get_or_404(Campaign, cid)
     st = get_or_404(CampaignStep, sid)
     to = (request.form.get("to") or "").strip()
+    if c.channel == "whatsapp":
+        enrollment = sample_enrollment(sess, cid, int_arg("enrollment_id", 0, request.form))
+        try:
+            with sess.no_autoflush:
+                send_whatsapp_test(sess, st, steps_of(sess, cid), c, enrollment, to, settings_now())
+            ok(f"Test WhatsApp message sent to {to}.")
+        except (ValueError, whatsapp.WhatsAppError) as e:
+            err(f"Test failed: {e}")
+        return redirect(url_for("campaigns.sequence", cid=cid) + f"#stage-{st.position}")
     if "@" not in to:
         err("Enter an email address to send the test to.")
         return redirect(url_for("campaigns.sequence", cid=cid) + f"#stage-{st.position}")

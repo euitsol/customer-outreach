@@ -5,7 +5,7 @@ from datetime import timedelta
 from sqlalchemy import and_, exists, func, literal, or_
 
 from app.clock import utcnow
-from app.crm import audit, normalize
+from app.crm import audit, normalize, people as people_svc
 from app.models import (
     Campaign, CampaignStep, ClickLink, Consent, ConversationMessage, Enrollment, Event, Message, Person,
     Suppression,
@@ -64,6 +64,24 @@ def email_consent_ok():
         ~exists().where(and_(Consent.person_id == Enrollment.person_id, Consent.channel == "email",
                              Consent.status == "revoked")),
     )
+
+
+def wa_consent_ok():
+    """SQL clause: the enrolled person may receive campaign WhatsApp messages (not do-not-contact, not opted out)."""
+    return and_(
+        ~exists().where(and_(Person.id == Enrollment.person_id, Person.do_not_contact == True)),  # noqa: E712
+        ~exists().where(and_(Consent.person_id == Enrollment.person_id, Consent.channel == "whatsapp",
+                             Consent.status == "revoked")),
+    )
+
+
+def phone_not_suppressed():
+    """SQL clause: for WhatsApp campaigns `Enrollment.email` holds the number; it is not on the block list."""
+    return ~exists().where(and_(Suppression.kind == "phone", Suppression.value == Enrollment.email))
+
+
+def is_phone_suppressed(session, number):
+    return session.query(Suppression).filter_by(kind="phone", value=normalize.phone(number)).first() is not None
 
 
 def sendable():
@@ -142,7 +160,13 @@ def enroll(session, campaign, person, email=None, variables=None, priority=None,
         if variables:
             existing.custom_fields = {**existing.custom_fields, **variables}
         return existing, False
-    address = normalize.email(email) or person.email
+    if campaign.channel == "whatsapp":
+        # the destination number takes the place of the address (E.164)
+        address = normalize.phone(people_svc.whatsapp_number(person))
+        if not address or not address.startswith("+"):
+            raise EnrollError(f"{person.display_name} has no WhatsApp number in international format.")
+    else:
+        address = normalize.email(email) or person.email
     if not address:
         raise EnrollError(f"{person.display_name} has no email address.")
     clash = (session.query(Enrollment)
@@ -167,11 +191,20 @@ def enroll_people(session, campaign, people, actor=None):
     """Bulk enroll. Returns stats dict."""
     steps = steps_of(session, campaign.id)
     stats = {"enrolled": 0, "already": 0, "no_email": 0, "blocked": 0}
+    wa = campaign.channel == "whatsapp"
     for p in people:
-        if not p.email:
+        if wa:
+            number = people_svc.whatsapp_number(p)
+            if not number:
+                stats["no_email"] += 1          # "no_email" doubles as "no number" for WhatsApp campaigns
+                continue
+            if p.do_not_contact or is_phone_suppressed(session, number):
+                stats["blocked"] += 1
+                continue
+        elif not p.email:
             stats["no_email"] += 1
             continue
-        if p.do_not_contact or is_suppressed(session, p.email):
+        elif p.do_not_contact or is_suppressed(session, p.email):
             stats["blocked"] += 1
             continue
         try:
@@ -316,7 +349,6 @@ def reset_enrollment(session, enrollment):
 
 def mark_unsubscribed(session, enrollment, source="Unsubscribed via email link", actor=None):
     """Opt the person out of email everywhere: every enrollment on that address, consent, suppression."""
-    from app.crm import people as people_svc
     stage = enrollment.stage
     if not enrollment.unsubscribed:
         session.add(Event(enrollment_id=enrollment.id, stage=stage, type="unsubscribed"))
@@ -378,7 +410,8 @@ def duplicate_campaign(session, campaign, new_name):
     session.flush()
     for st in steps_of(session, campaign.id):
         session.add(CampaignStep(campaign_id=new.id, position=st.position, name=st.name,
-                                 subject=st.subject, body=st.body, delay_hours=st.delay_hours))
+                                 subject=st.subject, body=st.body, delay_hours=st.delay_hours,
+                                 wa_template=st.wa_template))
     session.flush()
     return new
 

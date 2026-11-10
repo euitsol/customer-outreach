@@ -25,6 +25,7 @@
     </div>
   </div>
 
+  {% if c.channel != 'whatsapp' %}
   <div class="card card-pad">
     <h2>Send from</h2>
     <p class="muted small mb2">Tick every mailbox this campaign may use; emails rotate between them (the one that has sent the fewest today goes next, and follow-ups stay on the mailbox that wrote first). With none ticked it uses the first active mailbox only. Manage them under <a href="{{ url_for('workspace.mailboxes') }}">Workspace &gt; Mailboxes</a>.</p>
@@ -45,6 +46,7 @@
       <label class="check"><input type="checkbox" name="track_clicks" value="1" {{ 'checked' if c.track_clicks is not false }}><span><b>Track link clicks</b><div class="hint">Links are redirected through your tracking domain.</div></span></label>
     </div>
   </div>
+  {% endif %}
   <div class="form-actions" style="margin-top:0"><button class="btn btn-primary">Save settings</button></div>
 </form>
 

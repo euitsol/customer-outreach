@@ -31,6 +31,7 @@ advisory lock, so exactly one container migrates) and default rows.
 | `DEFAULT_CURRENCY` | no | Deal currency (default `EUR`) |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | for WhatsApp | Twilio credentials; the token also verifies webhook signatures (unsigned webhooks are rejected) |
 | `TWILIO_WHATSAPP_FROM` | for WhatsApp | Your WhatsApp sender, `whatsapp:+14155238886` |
+| `TWILIO_DAILY_LIMIT` | no | WhatsApp campaign messages per day (default 250, the starting Meta tier; raise it when Meta raises your tier) |
 | `TWILIO_MESSAGING_SERVICE_SID` | no | Send through a Messaging Service (`MG...`) instead of the single sender |
 | `MCP_HOST`, `MCP_PORT` | no | MCP bind address (`0.0.0.0:8092` inside the container) |
 | `MCP_ALLOWED_HOSTS` | no | Comma separated Host values for DNS-rebinding protection |
@@ -113,7 +114,11 @@ Restoring an older backup is fine: the containers migrate it forward on start.
 
 Webhooks are verified with Twilio's `X-Twilio-Signature` and stored in `webhook_events` (unique per
 message/status), so retries never create duplicates. A reply of STOP / UNSUBSCRIBE / CANCEL / END / QUIT
-revokes the person's WhatsApp consent. *Integrations > Recent webhook deliveries* shows failures.
+revokes the person's WhatsApp consent.
+
+WhatsApp campaigns are sent by a second loop inside the `worker` container (same send window and pause switch
+as email; its own daily cap `TWILIO_DAILY_LIMIT`; status line `wa_worker_status` in settings; log lines are the
+same `sent [campaign / stage] +353...` format). *Integrations > Recent webhook deliveries* shows failures.
 
 ## Monitoring & troubleshooting
 

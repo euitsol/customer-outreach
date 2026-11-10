@@ -8,6 +8,11 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **WhatsApp campaigns**: choose *WhatsApp* when creating a campaign. Each stage sends an approved Twilio
+  template (Content SID + values with merge fields) to people's phone numbers, with the usual delays,
+  follow-ups and stop-on-reply. Messages appear in the person's WhatsApp thread; read receipts count as opens.
+  A separate worker loop paces sends and caps them at `TWILIO_DAILY_LIMIT` (default 250) per day.
+  Migration `0004` adds `campaign_steps.wa_template`.
 - **In-app help** in English and Bengali (বাংলা): a guide for every module under *Help & guides*, and a
   **Help** button on every page (English / বাংলা) that opens the guide for the page you are on.
   Pages are Markdown files in `app/help/` rendered with the new `Markdown` dependency.

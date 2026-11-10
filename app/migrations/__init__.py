@@ -18,9 +18,9 @@ import sys
 from sqlalchemy import inspect, text
 
 from app.clock import utcnow
-from app.migrations import ops, v0001_baseline, v0002_crm, v0003_mailboxes
+from app.migrations import ops, v0001_baseline, v0002_crm, v0003_mailboxes, v0004_whatsapp_campaigns
 
-MIGRATIONS = [v0001_baseline, v0002_crm, v0003_mailboxes]
+MIGRATIONS = [v0001_baseline, v0002_crm, v0003_mailboxes, v0004_whatsapp_campaigns]
 LOCK_ID = 727301
 
 

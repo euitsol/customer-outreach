@@ -24,6 +24,15 @@
 
 প্রতিটি stage-এর ফানেল: sent, opened, clicked, replied, failed ও waiting। বোতাম দিয়ে ব্যর্থগুলো আবার চেষ্টা (retry), কোনো stage এখনই পাঠানো, অথবা কিউতে থাকা পাঠানো বাতিল করা যায়।
 
+## WhatsApp ক্যাম্পেইন
+
+ক্যাম্পেইন তৈরির সময় চ্যানেল হিসেবে **WhatsApp** বেছে নিন (পরে বদলানো যায় না)। প্রতিটি stage ইমেইলের বদলে একটি অনুমোদিত template পাঠায়:
+
+* **Twilio Content SID**: Twilio-তে অনুমোদিত template-এর `HX...` আইডি ([Templates](/help/templates))।
+* **Template values**: template-এর `{{1}}`, `{{2}}`... placeholder-এ যা বসবে, `|` দিয়ে আলাদা করে, যেমন `{{first_name|there}} | {{company}}`। ফাঁকা মান `-` হিসেবে যায়।
+
+[People](/help/people) তালিকা থেকে মানুষদের enroll করুন (বেছে নিয়ে *Add to campaign*): আন্তর্জাতিক ফরম্যাটে ফোন নম্বর লাগবে; যারা WhatsApp opt-out করেছেন, do-not-contact বা block list-এ আছেন তারা বাদ পড়ে। কয়েক সেকেন্ড পরপর পাঠানো হয় এবং দৈনিক সীমা আছে (`TWILIO_DAILY_LIMIT`, ডিফল্ট ২৫০)। উত্তর এলে সিকোয়েন্স থামে; read receipt *opened* হিসেবে গণ্য হয়। মেসেজ [Inbox](/help/inbox)-এ ব্যক্তির WhatsApp থ্রেডেও দেখা যায়।
+
 ## ব্যক্তিভিত্তিক পরিবর্তন
 
 শুধু একজনের জন্য কোনো stage-এর সাবজেক্ট, লেখা বা পাঠানোর তারিখ বদলাতে, stage এখনই পাঠাতে, বাদ দিতে (skip), আবার খুলতে বা সিকোয়েন্স নতুন করে শুরু করতে তার enrollment খুলুন ([Enrollments](/help/enrollments))।

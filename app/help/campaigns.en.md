@@ -20,6 +20,15 @@ Automatic email sequences sent to the people enrolled in them.
 
 A reply (any channel), an unsubscribe, a bounce, "needs verification", paused sending, the person's do-not-contact switch, or the address being on the [Do not contact](/help/suppression) list.
 
+## WhatsApp campaigns
+
+Choose **WhatsApp** as the channel when you create a campaign (it can't be changed later). Each stage sends one approved template instead of an email:
+
+* **Twilio Content SID**: the `HX...` id of a template approved in Twilio ([Templates](/help/templates)).
+* **Template values**: what goes into the template's `{{1}}`, `{{2}}`... placeholders, separated by `|`, for example `{{first_name|there}} | {{company}}`. An empty value is sent as `-`.
+
+Enroll people from the [People](/help/people) list (select people, *Add to campaign*): they need a phone number in international format; people who opted out of WhatsApp, are do-not-contact or are on the block list are skipped. Sends are paced a few seconds apart and capped per day (`TWILIO_DAILY_LIMIT`, default 250). A reply stops the sequence; a read receipt counts as an *opened*. Messages also appear in the person's WhatsApp thread in the [Inbox](/help/inbox).
+
 ## Overview tab
 
 A funnel per stage: sent, opened, clicked, replied, failed and waiting. Buttons let you retry failures, send a stage now, or cancel queued sends.

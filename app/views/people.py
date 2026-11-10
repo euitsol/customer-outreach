@@ -158,7 +158,7 @@ def bulk():
         st = enroll_people(sess, camp, rows, who)
         msg = (f"Enrolled {st['enrolled']} in '{camp.name}'."
                + (f" {st['already']} already there." if st["already"] else "")
-               + (f" {st['no_email']} without email." if st["no_email"] else "")
+               + (f" {st['no_email']} without a {'WhatsApp number' if camp.channel == 'whatsapp' else 'email'}." if st["no_email"] else "")
                + (f" {st['blocked']} blocked (do-not-contact / suppressed)." if st["blocked"] else ""))
     elif action == "merge":
         if len(rows) != 2:
@@ -234,7 +234,7 @@ def new():
                     person.lifecycle_stage = form["lifecycle_stage"]
                 people_svc.add_tags(sess, person, form.get("tags", ""))
                 camp = sess.get(Campaign, int_arg("campaign_id", 0, form) or 0)
-                if camp and person.email:
+                if camp and (person.phone if camp.channel == "whatsapp" else person.email):
                     enroll(sess, camp, person, actor=actor())
                 sess.commit()
                 ok("Person added.")

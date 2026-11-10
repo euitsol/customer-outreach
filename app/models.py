@@ -518,6 +518,7 @@ class CampaignStep(Base):
     subject = Column(Text)                              # empty on follow-ups => "Re: <first subject>"
     body = Column(Text)
     delay_hours = Column(Integer, default=0)            # wait after the previous stage was sent
+    wa_template = Column(String(100))                   # WhatsApp campaigns: Twilio Content SID (HX...); `body` = its values
     created_at = Column(DateTime, server_default=func.now())
 
     campaign = relationship("Campaign", back_populates="steps")

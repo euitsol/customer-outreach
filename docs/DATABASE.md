@@ -64,7 +64,7 @@ erDiagram
 
 | Table | Purpose |
 |---|---|
-| `campaigns`, `campaign_steps` | Email sequences. |
+| `campaigns`, `campaign_steps` | Sequences. `campaigns.channel` is `email` or `whatsapp`; a WhatsApp stage holds the Twilio Content SID in `wa_template` and its placeholder values in `body`. For WhatsApp campaigns `enrollments.email` holds the destination number (E.164). |
 | `enrollments` | A person in a campaign (was `contacts`). Campaign state only: stage, next due time, flags; the send-to `email`; campaign-specific merge `variables` (JSONB). Unique `(campaign_id, person_id)`. |
 | `messages` | One per enrollment per step: per-person overrides, delivery state, sent snapshot, tracking tokens. Unique `(enrollment_id, step_id)`. |
 | `events`, `click_links` | Engagement log and tracked links (64-bit ids). |

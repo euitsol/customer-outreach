@@ -39,6 +39,7 @@ DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "EUR").upper()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")                 # also verifies webhook signatures
 TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")           # e.g. whatsapp:+14155238886
+TWILIO_DAILY_LIMIT = int(os.environ.get("TWILIO_DAILY_LIMIT", 250))        # WhatsApp campaign sends per day (Meta tier)
 TWILIO_MESSAGING_SERVICE_SID = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")  # optional, instead of FROM
 
 # --- MCP server (Claude). The HTTP transport requires an API key created in Settings > API keys.
