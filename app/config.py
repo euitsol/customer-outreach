@@ -35,14 +35,11 @@ TIMEZONE = os.environ.get("TIMEZONE", "Europe/Dublin")
 DEFAULT_PHONE_REGION = os.environ.get("DEFAULT_PHONE_REGION", "IE").upper()
 DEFAULT_CURRENCY = os.environ.get("DEFAULT_CURRENCY", "EUR").upper()
 
-# --- WhatsApp Business (Meta Cloud API). Leave empty to disable the channel.
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
-WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
-WHATSAPP_BUSINESS_ACCOUNT_ID = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
-WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "")   # you choose it; Meta echoes it back
-WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "")       # signs webhook payloads
-WHATSAPP_API_VERSION = os.environ.get("WHATSAPP_API_VERSION", "v21.0")
-WHATSAPP_DISPLAY_NUMBER = os.environ.get("WHATSAPP_DISPLAY_NUMBER", "")
+# --- WhatsApp through Twilio. Leave empty to disable the channel.
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")                 # also verifies webhook signatures
+TWILIO_WHATSAPP_FROM = os.environ.get("TWILIO_WHATSAPP_FROM", "")           # e.g. whatsapp:+14155238886
+TWILIO_MESSAGING_SERVICE_SID = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")  # optional, instead of FROM
 
 # --- MCP server (Claude). The HTTP transport requires an API key created in Settings > API keys.
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")

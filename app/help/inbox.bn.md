@@ -21,7 +21,7 @@
 
 ## WhatsApp-এর ২৪ ঘণ্টার নিয়ম
 
-ব্যক্তির শেষ মেসেজের ২৪ ঘণ্টার মধ্যে শুধু সাধারণ লেখা পাঠানো যায়। এরপর WhatsApp-এ **অনুমোদিত template** লাগে, যা আপনার Meta Business অ্যাকাউন্টে তৈরি করে [Templates](/help/templates)-এ WhatsApp চ্যানেল দিয়ে নিবন্ধন করতে হয়। কোনটি প্রযোজ্য তা composer আপনাকে জানায়। template-এর placeholder-এর মান "template values"-এ `|` দিয়ে আলাদা করে দিন।
+ব্যক্তির শেষ মেসেজের ২৪ ঘণ্টার মধ্যে শুধু সাধারণ লেখা পাঠানো যায়। এরপর WhatsApp-এ **অনুমোদিত template** লাগে, যা Twilio-তে তৈরি ও অনুমোদন করিয়ে [Templates](/help/templates)-এ (Content SID দিয়ে) WhatsApp চ্যানেল দিয়ে নিবন্ধন করতে হয়। কোনটি প্রযোজ্য তা composer আপনাকে জানায়। template-এর placeholder-এর মান "template values"-এ `|` দিয়ে আলাদা করে দিন।
 
 ## জেনে রাখুন
 

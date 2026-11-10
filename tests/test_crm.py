@@ -1,9 +1,9 @@
 """CRM features: people, companies, deals, tasks, inbox, WhatsApp, REST API, users, custom fields."""
+import base64
 import hashlib
 import hmac
 import json
 import re
-import time
 from email import message_from_string
 
 import pytest
@@ -49,14 +49,13 @@ def sent(monkeypatch):
 @pytest.fixture
 def wa(monkeypatch):
     calls = []
-    monkeypatch.setattr(config, "WHATSAPP_TOKEN", "tok")
-    monkeypatch.setattr(config, "WHATSAPP_PHONE_NUMBER_ID", "1234")
-    monkeypatch.setattr(config, "WHATSAPP_APP_SECRET", "appsecret")
-    monkeypatch.setattr(config, "WHATSAPP_VERIFY_TOKEN", "verify-me")
+    monkeypatch.setattr(config, "TWILIO_ACCOUNT_SID", "ACtest")
+    monkeypatch.setattr(config, "TWILIO_AUTH_TOKEN", "authtoken")
+    monkeypatch.setattr(config, "TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
 
-    def fake_post(payload, phone_number_id=None, client=None):
-        calls.append(payload)
-        return f"wamid.OUT{len(calls)}"
+    def fake_post(data, client=None):
+        calls.append(data)
+        return f"SMOUT{len(calls)}"
     monkeypatch.setattr(whatsapp, "_post", fake_post)
     return calls
 
@@ -252,28 +251,22 @@ def test_custom_fields_flow_into_records_and_emails(client):
 
 # ---------------------------------------------------------------------- WhatsApp
 
-def _signed(payload):
-    raw = json.dumps(payload).encode()
-    sig = "sha256=" + hmac.new(b"appsecret", raw, hashlib.sha256).hexdigest()
-    return raw, sig
+def _twilio(client, path, form, sign=True):
+    """POST a Twilio-style form, signed like Twilio does (public URL + sorted fields, HMAC-SHA1)."""
+    sig = ""
+    if sign:
+        signed = config.TRACK_BASE_URL + path + "".join(f"{k}{form[k]}" for k in sorted(form))
+        sig = base64.b64encode(hmac.new(b"authtoken", signed.encode(), hashlib.sha1).digest()).decode()
+    return client.post(path, data=form, headers={"X-Twilio-Signature": sig})
 
 
 def test_whatsapp_inbound_reply_and_status(client, wa):
     anon = app.test_client()
-    assert anon.get("/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=42").data == b"42"
-    assert anon.get("/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=42").status_code == 403
-
-    inbound = {"object": "whatsapp_business_account", "entry": [{"id": "WABA", "changes": [{"field": "messages", "value": {
-        "messaging_product": "whatsapp", "metadata": {"phone_number_id": "1234"},
-        "contacts": [{"profile": {"name": "Maeve Byrne"}, "wa_id": "353871112233"}],
-        "messages": [{"from": "353871112233", "id": "wamid.IN1", "timestamp": str(int(time.time()) - 60), "type": "text",
-                      "text": {"body": "Hi, is the offer still on?"}}]}}]}]}
-    raw, sig = _signed(inbound)
-    assert anon.post("/webhooks/whatsapp", data=raw, headers={"Content-Type": "application/json"}).status_code == 403
-    r = anon.post("/webhooks/whatsapp", data=raw, headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig})
-    assert r.status_code == 200 and r.get_json()["messages"] == 1
-    r = anon.post("/webhooks/whatsapp", data=raw, headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig})
-    assert r.get_json()["duplicates"] == 1                             # Meta retries are no-ops
+    inbound = {"MessageSid": "SMIN1", "From": "whatsapp:+353871112233", "To": "whatsapp:+14155238886",
+               "ProfileName": "Maeve Byrne", "Body": "Hi, is the offer still on?", "NumMedia": "0"}
+    assert _twilio(anon, "/webhooks/twilio/whatsapp", inbound, sign=False).status_code == 403
+    assert _twilio(anon, "/webhooks/twilio/whatsapp", inbound).status_code == 200
+    _twilio(anon, "/webhooks/twilio/whatsapp", inbound)                    # Twilio retries are no-ops
 
     s = SessionLocal()
     maeve = s.query(Person).filter_by(phone="+353871112233").one()
@@ -282,32 +275,33 @@ def test_whatsapp_inbound_reply_and_status(client, wa):
     assert conv.unread_count == 1 and conv.last_inbound_at is not None
     assert s.query(ConversationMessage).filter_by(conversation_id=conv.id).one().body == "Hi, is the offer still on?"
 
-    # reply within the 24h window: free text goes out through the Cloud API
+    # reply within the 24h window: free text goes out through Twilio
     r = post(client, f"/inbox/{conv.id}/reply", body="Yes! Until Friday.")
-    assert r.status_code == 302 and wa[-1]["type"] == "text" and wa[-1]["to"] == "353871112233"
+    assert r.status_code == 302 and wa[-1]["Body"] == "Yes! Until Friday." and wa[-1]["To"] == "whatsapp:+353871112233"
     s.expire_all()
     out = s.query(ConversationMessage).filter_by(conversation_id=conv.id, direction="out").one()
-    assert out.external_id == "wamid.OUT1" and out.status == "sent"
+    assert out.external_id == "SMOUT1" and out.status == "sent"
 
-    status = {"entry": [{"changes": [{"value": {"statuses": [
-        {"id": "wamid.OUT1", "status": "delivered", "timestamp": str(int(time.time())), "recipient_id": "353871112233"},
-        {"id": "wamid.OUT1", "status": "read", "timestamp": str(int(time.time())), "recipient_id": "353871112233"}]}}]}]}
-    raw, sig = _signed(status)
-    anon.post("/webhooks/whatsapp", data=raw, headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig})
+    _twilio(anon, "/webhooks/twilio/status", {"MessageSid": "SMOUT1", "MessageStatus": "delivered"})
+    _twilio(anon, "/webhooks/twilio/status", {"MessageSid": "SMOUT1", "MessageStatus": "read"})
     s.expire_all()
     out = s.get(ConversationMessage, out.id)
     assert out.status == "read" and out.read_at and out.delivered_at
     assert s.query(WebhookEvent).filter_by(provider="whatsapp").count() == 3
 
-    # outside the 24h window free text is refused; a template is allowed
+    # outside the 24h window free text is refused; a template (Content SID) is allowed
     conv = s.get(Conversation, conv.id)
     conv.last_inbound_at = conv.last_inbound_at.replace(year=2020)
     s.commit()
     post(client, f"/inbox/{conv.id}/reply", body="Are you there?")
     assert len(wa) == 1
-    post(client, f"/inbox/{conv.id}/reply", wa_template="follow_up", wa_params="Maeve | Friday")
-    assert wa[-1]["type"] == "template" and wa[-1]["template"]["name"] == "follow_up"
-    assert [p["text"] for p in wa[-1]["template"]["components"][0]["parameters"]] == ["Maeve", "Friday"]
+    post(client, f"/inbox/{conv.id}/reply", wa_template="HX123", wa_params="Maeve | Friday")
+    assert wa[-1]["ContentSid"] == "HX123" and json.loads(wa[-1]["ContentVariables"]) == {"1": "Maeve", "2": "Friday"}
+
+    # STOP opts the person out of WhatsApp
+    _twilio(anon, "/webhooks/twilio/whatsapp", dict(inbound, MessageSid="SMIN2", Body="STOP"))
+    s.expire_all()
+    assert s.query(Consent).filter_by(person_id=maeve.id, channel="whatsapp").one().status == "revoked"
     s.close()
 
 
@@ -322,12 +316,9 @@ def test_whatsapp_reply_stops_email_sequence(client, wa):
     e, _ = enroll(s, camp, p)
     e.stage = 1
     s.commit()
-    payload = {"entry": [{"changes": [{"value": {"contacts": [{"wa_id": "353859990000", "profile": {"name": "Liam"}}],
-               "messages": [{"from": "353859990000", "id": "wamid.LIAM", "timestamp": "1761400000", "type": "text",
-                             "text": {"body": "Interested, call me"}}]}}]}]}
-    raw, sig = _signed(payload)
-    app.test_client().post("/webhooks/whatsapp", data=raw,
-                           headers={"Content-Type": "application/json", "X-Hub-Signature-256": sig})
+    _twilio(app.test_client(), "/webhooks/twilio/whatsapp",
+            {"MessageSid": "SMLIAM", "From": "whatsapp:+353859990000", "ProfileName": "Liam",
+             "Body": "Interested, call me", "NumMedia": "0"})
     s.expire_all()
     assert s.get(Enrollment, e.id).replied is True                       # matched by phone to the same person
     assert s.query(Person).filter_by(phone="+353859990000").count() == 1

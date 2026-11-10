@@ -17,7 +17,7 @@ Email templates can be loaded into campaign stages ([Campaigns](/help/campaigns)
 
 ## WhatsApp templates
 
-WhatsApp only lets you start a conversation (or write after 24 hours of silence) with a template that Meta has **approved**. Create it in your Meta Business account first, then register it here: enter the **WhatsApp template name** exactly as in Meta and its **Language** (for example `en_US`).
+WhatsApp only lets you start a conversation (or write after 24 hours of silence) with a template that WhatsApp has **approved**. Create it in Twilio (Content Template Builder) first, then register it here: enter its **Twilio Content SID** (starts with `HX`). The Language field is not used.
 
 ## Good to know
 

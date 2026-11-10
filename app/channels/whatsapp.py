@@ -1,24 +1,26 @@
-"""WhatsApp Business Platform (Meta Cloud API).
+"""WhatsApp through Twilio (Programmable Messaging API).
 
-Sending:   POST https://graph.facebook.com/<version>/<phone_number_id>/messages
-Receiving: Meta calls POST /webhooks/whatsapp (configure it in the Meta app dashboard together with
-           WHATSAPP_VERIFY_TOKEN); every payload is signed with the app secret (X-Hub-Signature-256).
+Sending:   POST https://api.twilio.com/2010-04-01/Accounts/<SID>/Messages.json  (To=whatsapp:+<number>)
+Receiving: Twilio POSTs form data to /webhooks/twilio/whatsapp (set it as "incoming messages" URL on the
+           WhatsApp sender); delivery updates go to /webhooks/twilio/status, which we pass per message.
+           Every request is signed with the auth token (X-Twilio-Signature).
 
 Free-form text can only be sent within 24 hours of the person's last message to you; outside that
-window WhatsApp requires an approved message template (send_template).
+window WhatsApp requires an approved template (a Twilio Content SID, HX...).
 """
+import base64
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
 
 import httpx
 
 from app import config
+from app.clock import utcnow
 
-GRAPH = "https://graph.facebook.com"
+API = "https://api.twilio.com/2010-04-01"
 SERVICE_WINDOW_HOURS = 24
-REENGAGEMENT_ERROR = 131047   # "more than 24 hours have passed since the customer last replied"
+STATUS_PATH = "/webhooks/twilio/status"
 
 
 class WhatsAppError(Exception):
@@ -29,120 +31,88 @@ class WhatsAppError(Exception):
 
 
 def configured():
-    return bool(config.WHATSAPP_TOKEN and config.WHATSAPP_PHONE_NUMBER_ID)
+    return bool(config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN
+                and (config.TWILIO_WHATSAPP_FROM or config.TWILIO_MESSAGING_SERVICE_SID))
 
 
-def _post(payload, phone_number_id=None, client=None):
+def _post(data, client=None):
     if not configured():
-        raise WhatsAppError("WhatsApp is not configured (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID).")
-    url = f"{GRAPH}/{config.WHATSAPP_API_VERSION}/{phone_number_id or config.WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {"Authorization": f"Bearer {config.WHATSAPP_TOKEN}", "Content-Type": "application/json"}
+        raise WhatsAppError("WhatsApp is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / "
+                            "TWILIO_WHATSAPP_FROM).")
+    if config.TWILIO_MESSAGING_SERVICE_SID:
+        data["MessagingServiceSid"] = config.TWILIO_MESSAGING_SERVICE_SID
+    else:
+        data["From"] = config.TWILIO_WHATSAPP_FROM
+    data["StatusCallback"] = config.TRACK_BASE_URL + STATUS_PATH
+    url = f"{API}/Accounts/{config.TWILIO_ACCOUNT_SID}/Messages.json"
+    auth = (config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
     try:
         if client is not None:
-            resp = client.post(url, headers=headers, json=payload)
+            resp = client.post(url, data=data, auth=auth)
         else:
             with httpx.Client(timeout=20) as c:
-                resp = c.post(url, headers=headers, json=payload)
+                resp = c.post(url, data=data, auth=auth)
     except httpx.HTTPError as e:
-        raise WhatsAppError(f"Could not reach WhatsApp: {e}")
+        raise WhatsAppError(f"Could not reach Twilio: {e}")
     try:
-        data = resp.json()
+        body = resp.json()
     except ValueError:
-        data = {}
-    if resp.status_code >= 400 or "error" in data:
-        err = data.get("error") or {}
-        code = err.get("code")
-        msg = err.get("error_user_msg") or err.get("message") or f"HTTP {resp.status_code}"
-        raise WhatsAppError(f"WhatsApp error {code}: {msg}", code=code,
-                            permanent=resp.status_code in (400, 403, 404))
-    try:
-        return data["messages"][0]["id"]
-    except (KeyError, IndexError, TypeError):
-        raise WhatsAppError(f"Unexpected WhatsApp response: {json.dumps(data)[:300]}")
+        body = {}
+    if resp.status_code >= 400 or body.get("error_code"):
+        code = body.get("code") or body.get("error_code")
+        msg = body.get("message") or body.get("error_message") or f"HTTP {resp.status_code}"
+        raise WhatsAppError(f"Twilio error {code}: {msg}", code=code,
+                            permanent=resp.status_code in (400, 401, 403, 404))
+    if not body.get("sid"):
+        raise WhatsAppError(f"Unexpected Twilio response: {json.dumps(body)[:300]}")
+    return body["sid"]
 
 
-def send_text(to_wa_id, body, preview_url=True, client=None):
-    return _post({"messaging_product": "whatsapp", "recipient_type": "individual", "to": to_wa_id,
-                  "type": "text", "text": {"preview_url": preview_url, "body": body[:4096]}}, client=client)
+def _to(wa_id):
+    return f"whatsapp:+{wa_id}"
 
 
-def send_template(to_wa_id, name, language="en_US", body_params=None, client=None):
-    template = {"name": name, "language": {"code": language}}
+def send_text(to_wa_id, body, client=None):
+    return _post({"To": _to(to_wa_id), "Body": body[:1600]}, client=client)
+
+
+def send_template(to_wa_id, name, language=None, body_params=None, client=None):
+    """`name` is the template's Content SID (HX...); `language` is unused (a Content SID is one language)."""
+    data = {"To": _to(to_wa_id), "ContentSid": name}
     if body_params:
-        template["components"] = [{"type": "body", "parameters": [{"type": "text", "text": str(p)}
-                                                                 for p in body_params]}]
-    return _post({"messaging_product": "whatsapp", "recipient_type": "individual", "to": to_wa_id,
-                  "type": "template", "template": template}, client=client)
+        data["ContentVariables"] = json.dumps({str(i): str(p) for i, p in enumerate(body_params, 1)})
+    return _post(data, client=client)
 
 
 # ---------------------------------------------------------------------- webhooks
 
-def verify_subscription(args):
-    """GET handshake: returns the challenge to echo, or None."""
-    if (args.get("hub.mode") == "subscribe" and config.WHATSAPP_VERIFY_TOKEN
-            and hmac.compare_digest(args.get("hub.verify_token", ""), config.WHATSAPP_VERIFY_TOKEN)):
-        return args.get("hub.challenge", "")
-    return None
-
-
-def verify_signature(raw_body, header):
-    if not config.WHATSAPP_APP_SECRET:
+def verify_signature(url, form, header):
+    """Twilio signs the full public URL followed by the POST fields sorted by name."""
+    if not config.TWILIO_AUTH_TOKEN:
         return False
-    expected = "sha256=" + hmac.new(config.WHATSAPP_APP_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, header or "")
-
-
-def _ts(value):
-    try:
-        return datetime.fromtimestamp(int(value), tz=timezone.utc).replace(tzinfo=None)
-    except (TypeError, ValueError):
-        return None
-
-
-def _message_text(m):
-    kind = m.get("type")
-    if kind == "text":
-        return (m.get("text") or {}).get("body", "")
-    if kind in ("image", "video", "document", "audio", "sticker"):
-        media = m.get(kind) or {}
-        caption = media.get("caption") or media.get("filename") or ""
-        return f"[{kind}] {caption}".strip()
-    if kind == "location":
-        loc = m.get("location") or {}
-        return f"[location] {loc.get('name') or ''} {loc.get('latitude')},{loc.get('longitude')}".strip()
-    if kind == "button":
-        return (m.get("button") or {}).get("text", "[button]")
-    if kind == "interactive":
-        inter = m.get("interactive") or {}
-        reply = inter.get("button_reply") or inter.get("list_reply") or {}
-        return reply.get("title") or "[interactive]"
-    if kind == "reaction":
-        return f"[reaction] {(m.get('reaction') or {}).get('emoji', '')}"
-    if kind == "contacts":
-        return "[contact card]"
-    return f"[{kind or 'message'}]"
+    signed = url + "".join(f"{k}{form[k]}" for k in sorted(form))
+    digest = hmac.new(config.TWILIO_AUTH_TOKEN.encode(), signed.encode(), hashlib.sha1).digest()
+    return hmac.compare_digest(base64.b64encode(digest).decode(), header or "")
 
 
 def parse_webhook(payload):
-    """Flatten a webhook body into ('message', dict) / ('status', dict) items."""
-    out = []
-    for entry in (payload or {}).get("entry") or []:
-        for change in entry.get("changes") or []:
-            value = change.get("value") or {}
-            meta = value.get("metadata") or {}
-            names = {c.get("wa_id"): (c.get("profile") or {}).get("name") for c in value.get("contacts") or []}
-            for m in value.get("messages") or []:
-                out.append(("message", {
-                    "id": m.get("id"), "from": m.get("from"), "name": names.get(m.get("from")),
-                    "timestamp": _ts(m.get("timestamp")), "type": m.get("type"), "text": _message_text(m),
-                    "phone_number_id": meta.get("phone_number_id"),
-                    "context_id": (m.get("context") or {}).get("id"), "raw": m,
-                }))
-            for s in value.get("statuses") or []:
-                errors = s.get("errors") or []
-                out.append(("status", {
-                    "id": s.get("id"), "status": s.get("status"), "timestamp": _ts(s.get("timestamp")),
-                    "recipient": s.get("recipient_id"),
-                    "error": "; ".join(f"{e.get('code')}: {e.get('title') or e.get('message')}" for e in errors) or None,
-                }))
-    return out
+    """Flatten a Twilio form (plus `_kind`: 'message' | 'status') into ('message'|'status', dict) items."""
+    p = payload or {}
+    sid = p.get("MessageSid") or p.get("SmsMessageSid")
+    if not sid:
+        return []
+    if p.get("_kind") == "status":
+        status = (p.get("MessageStatus") or "").lower()
+        status = "failed" if status == "undelivered" else status
+        err = p.get("ErrorCode")
+        return [("status", {"id": sid, "status": status, "timestamp": utcnow(), "recipient": p.get("To"),
+                            "error": f"{err}: {p.get('ErrorMessage') or 'delivery failed'}" if err else None})]
+    text = p.get("Body") or ""
+    if int(p.get("NumMedia") or 0) > 0:
+        text = f"[{p.get('MediaContentType0') or 'media'}] {text}".strip()
+    elif p.get("Latitude"):
+        text = f"[location] {p.get('Latitude')},{p.get('Longitude')}"
+    return [("message", {"id": sid, "from": (p.get("From") or "").replace("whatsapp:", ""),
+                         "name": p.get("ProfileName"), "timestamp": utcnow(), "text": text,
+                         "type": "media" if int(p.get("NumMedia") or 0) > 0 else "text",
+                         "context_id": p.get("OriginalRepliedMessageSid"), "raw": dict(p)})]

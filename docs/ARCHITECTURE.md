@@ -26,7 +26,7 @@ app/
 
   channels/            delivery adapters
     __init__.py        channel account lookup / status
-    whatsapp.py        Meta Cloud API: send text / template, webhook verify / signature / parse
+    whatsapp.py        Twilio: send text / template, webhook signature / parse
   mailer.py            SMTP: build MIME, tracking (pixel, links, unsubscribe), deliver through one mailbox
   mailboxes.py         sending mailboxes: credentials, rotation per campaign, sticky follow-ups, daily limits, panel save/test
   services.py          outreach domain: enroll, scheduling, queue / retry / skip, suppression, unsubscribe

@@ -33,7 +33,7 @@ audit log.
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in Postgres, panel login, SMTP / IMAP, `TRACK_BASE_URL`.
-Optional blocks: WhatsApp (`WHATSAPP_*`), `DEFAULT_PHONE_REGION` (country for local phone numbers),
+Optional blocks: WhatsApp (`TWILIO_*`), `DEFAULT_PHONE_REGION` (country for local phone numbers),
 `DEFAULT_CURRENCY`, `PUBLIC_BASE_URL`, MCP (`MCP_*`).
 
 Sign-in: the `ADMIN_USER` / `ADMIN_PASSWORD` from `.env` always works; add personal users under
@@ -86,9 +86,9 @@ the audit log as `mcp: <key name>`.
 
 ## WhatsApp
 
-Meta Cloud API. Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` and a
-`WHATSAPP_VERIFY_TOKEN` of your choice, redeploy, then register `https://<TRACK_BASE_URL>/webhooks/whatsapp`
-in the Meta app (subscribe to `messages`). Step-by-step and a test-send button: **Workspace >
+Through Twilio. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_WHATSAPP_FROM`
+(`whatsapp:+...`), redeploy, then set the WhatsApp sender's "incoming messages" URL in Twilio to
+`https://<TRACK_BASE_URL>/webhooks/twilio/whatsapp`. Step-by-step and a test-send button: **Workspace >
 Integrations**. Inbound messages create / match the person by phone number and land in the inbox;
 delivery and read receipts update the sent message. Outside the 24-hour customer-service window only
 approved templates can be sent (register them under **Templates** with channel WhatsApp).

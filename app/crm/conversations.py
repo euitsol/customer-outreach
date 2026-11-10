@@ -110,6 +110,9 @@ def stop_sequences(session, person, reason):
     return n
 
 
+STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+
+
 def record_whatsapp_inbound(session, item):
     """Store one parsed inbound WhatsApp message; creates the person if the number is new."""
     phone = normalize.from_whatsapp_id(item["from"])
@@ -130,6 +133,9 @@ def record_whatsapp_inbound(session, item):
     if new:
         people_svc.touch(person, item.get("timestamp"))
         stop_sequences(session, person, "Replied on WhatsApp")
+        if (item.get("text") or "").strip().lower().rstrip(".!") in STOP_WORDS:
+            people_svc.set_consent(session, person, "whatsapp", "revoked", source="WhatsApp STOP reply",
+                                   actor=audit.Actor("system", label="whatsapp webhook"))
     return msg, created
 
 
@@ -153,7 +159,7 @@ def record_whatsapp_status(session, item):
 
 
 def process_whatsapp_webhook(session, payload):
-    """Returns counts. Every item is first written to webhook_events, so Meta's retries are no-ops."""
+    """Returns counts. Every item is first written to webhook_events, so Twilio's retries are no-ops."""
     from app.models import WebhookEvent
     counts = {"messages": 0, "statuses": 0, "duplicates": 0}
     for kind, item in whatsapp.parse_webhook(payload):

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+- **WhatsApp now runs on Twilio** instead of the Meta Cloud API: `TWILIO_*` settings replace `WHATSAPP_*`,
+  webhooks are `/webhooks/twilio/whatsapp` (incoming) and `/webhooks/twilio/status` (delivery), templates are
+  registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
+
 ### Added
 - **In-app help** in English and Bengali (বাংলা): a guide for every module under *Help & guides*, and a
   **Help** button on every page (English / বাংলা) that opens the guide for the page you are on.
@@ -26,7 +31,7 @@ The campaign manager became a full CRM. Upgrading is automatic on first start (s
 - **Tasks** and **activities** (notes, calls, meetings) on people, companies and deals.
 - **Inbox**: email replies and WhatsApp chats per person, assignment, status, unread counts; campaign
   emails threaded in.
-- **WhatsApp Business** (Meta Cloud API): send text / templates, signed webhooks, delivery / read
+- **WhatsApp Business** (via Twilio): send text / templates, signed webhooks, delivery / read
   receipts, 24-hour window handling, idempotent processing.
 - **Users** with roles; **API keys** with read / write / send scopes; **REST API** `/api/v1`.
 - **MCP server** so Claude can use the CRM (26 tools, 2 prompts), with audit attribution.

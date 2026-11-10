@@ -128,9 +128,12 @@ def integrations():
                 err("Enter a phone number in international format, e.g. +353 87 123 4567.")
             else:
                 try:
-                    name = (request.form.get("template") or "hello_world").strip()
-                    wamid = whatsapp.send_template(to, name, (request.form.get("language") or "en_US").strip())
-                    ok(f"WhatsApp template '{name}' sent (id {wamid[:24]}...).")
+                    sid = (request.form.get("template") or "").strip()
+                    if sid:
+                        wamid = whatsapp.send_template(to, sid)
+                    else:
+                        wamid = whatsapp.send_text(to, "Test message from your Outreach CRM.")
+                    ok(f"WhatsApp test sent (id {wamid[:24]}...).")
                 except whatsapp.WhatsAppError as e:
                     err(f"WhatsApp test failed: {e}")
         elif act == "account":

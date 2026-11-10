@@ -5,7 +5,7 @@
 | Container | Command | Job |
 |---|---|---|
 | `db` | Postgres 16 | All data (volume `pgdata`) |
-| `web` | `gunicorn app.web:app` on `127.0.0.1:8091` | Panel, REST API (`/api/v1`), tracking (`/t/...`), WhatsApp webhooks (`/webhooks/whatsapp`) |
+| `web` | `gunicorn app.web:app` on `127.0.0.1:8091` | Panel, REST API (`/api/v1`), tracking (`/t/...`), WhatsApp webhooks (`/webhooks/twilio/...`) |
 | `worker` | `python -m app.worker` | Sends campaign emails: due stages, retries, pacing, daily limit, send window |
 | `reply_checker` | `python -m app.reply_checker` | Reads the IMAP inbox: replies (stop sequences, log to inbox) and bounces |
 | `mcp` | `python -m app.mcp_server` on `127.0.0.1:8092` | MCP server for Claude |
@@ -29,10 +29,9 @@ advisory lock, so exactly one container migrates) and default rows.
 | `MIN_DELAY_SECONDS`, `MAX_DELAY_SECONDS`, `MAX_PER_DAY`, `CHECK_INTERVAL_SECONDS` | no | Defaults only; edited live in *Sending settings* |
 | `DEFAULT_PHONE_REGION` | no | Country for phone numbers without `+` (ISO code, default `IE`) |
 | `DEFAULT_CURRENCY` | no | Deal currency (default `EUR`) |
-| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | for WhatsApp | Meta Cloud API credentials |
-| `WHATSAPP_APP_SECRET` | for WhatsApp | Verifies webhook signatures (unsigned webhooks are rejected) |
-| `WHATSAPP_VERIFY_TOKEN` | for WhatsApp | Any string; also entered in Meta's webhook settings |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID`, `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_API_VERSION` | no | Shown in the panel / API version (`v21.0`) |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | for WhatsApp | Twilio credentials; the token also verifies webhook signatures (unsigned webhooks are rejected) |
+| `TWILIO_WHATSAPP_FROM` | for WhatsApp | Your WhatsApp sender, `whatsapp:+14155238886` |
+| `TWILIO_MESSAGING_SERVICE_SID` | no | Send through a Messaging Service (`MG...`) instead of the single sender |
 | `MCP_HOST`, `MCP_PORT` | no | MCP bind address (`0.0.0.0:8092` inside the container) |
 | `MCP_ALLOWED_HOSTS` | no | Comma separated Host values for DNS-rebinding protection |
 
@@ -100,21 +99,21 @@ Restoring an older backup is fine: the containers migrate it forward on start.
 
 ## WhatsApp
 
-1. In [Meta for Developers](https://developers.facebook.com/apps) create a **Business** app, add the
-   **WhatsApp** product and a phone number.
-2. Create a **system user** in Business Settings with a permanent token that has
-   `whatsapp_business_messaging` (and `whatsapp_business_management` for templates).
-3. In `.env`: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` (App settings > Basic),
-   `WHATSAPP_VERIFY_TOKEN` (make one up). Redeploy.
-4. WhatsApp > Configuration > Webhook: callback `https://<TRACK_BASE_URL host>/webhooks/whatsapp`, the
-   verify token from step 3; subscribe to **messages**.
-5. *Workspace > Integrations*: send the `hello_world` test template to your phone; reply to it and the
+1. In the [Twilio Console](https://console.twilio.com) copy the **Account SID** and **Auth Token**
+   (Dashboard > Account Info) and your WhatsApp sender number (Messaging > Senders > WhatsApp senders).
+2. In `.env`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM=whatsapp:+...`. Redeploy.
+3. On the sender (or its Messaging Service) set **Incoming messages** to
+   `https://<TRACK_BASE_URL host>/webhooks/twilio/whatsapp` (HTTP POST). Delivery callbacks use
+   `/webhooks/twilio/status`, passed with every message, so nothing to configure there.
+4. *Workspace > Integrations*: send a test to your phone (sandbox: join it first); reply and the
    message appears in the Inbox.
-6. Create message templates in WhatsApp Manager; register them in *Templates* (channel WhatsApp, the
-   exact template name and language) to use them outside the 24-hour window.
+5. Create templates in Twilio's Content Template Builder, get them approved, and register each Content
+   SID (`HX...`) in *Templates* (channel WhatsApp) to use them outside the 24-hour window. Template
+   placeholders `{{1}}`, `{{2}}` are filled from "template values".
 
-Webhooks are verified with HMAC-SHA256 and stored in `webhook_events` (unique per message/status), so
-Meta's retries never create duplicates. *Integrations > Recent webhook deliveries* shows failures.
+Webhooks are verified with Twilio's `X-Twilio-Signature` and stored in `webhook_events` (unique per
+message/status), so retries never create duplicates. A reply of STOP / UNSUBSCRIBE / CANCEL / END / QUIT
+revokes the person's WhatsApp consent. *Integrations > Recent webhook deliveries* shows failures.
 
 ## Monitoring & troubleshooting
 
@@ -129,7 +128,7 @@ Meta's retries never create duplicates. *Integrations > Recent webhook deliverie
 | Worker "SMTP problem, pausing 5 min" | SMTP credentials / provider limits; `Sending settings > SMTP test` |
 | Nothing sends | sending paused? campaign active? send window? daily limit reached? |
 | Replies not detected | IMAP settings of the mailbox that sent the email (Workspace > Mailboxes shows the last check per mailbox); the reply must come from a known address or quote a sent Message-ID |
-| Webhook 403 | `WHATSAPP_APP_SECRET` missing/wrong |
+| Webhook 403 | `TWILIO_AUTH_TOKEN` wrong, or `TRACK_BASE_URL` differs from the URL set in Twilio (the signature covers the exact URL) |
 | Web won't start after deploy | `docker compose logs web` - a failed migration is rolled back and logged; restore the pre-deploy backup if needed |
 
 ## Scaling notes

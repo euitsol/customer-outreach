@@ -188,8 +188,8 @@ Every conversation with a person is one thread per channel:
 - Filters: Open / Unread / Pending / Closed / All, Email / WhatsApp, Assigned to me.
 
 **WhatsApp's 24-hour rule**: you can send free text only within 24 hours of the person's last message.
-After that WhatsApp requires an **approved template** (created in your Meta Business account and
-registered under *Templates* with channel WhatsApp). The composer tells you which applies. Values for
+After that WhatsApp requires an **approved template** (created and approved in Twilio, then registered under *Templates*
+with channel WhatsApp using its Content SID, `HX...`). The composer tells you which applies. Values for
 the template's placeholders go in "template values" separated by `|`.
 
 ## 7. Deals and the pipeline

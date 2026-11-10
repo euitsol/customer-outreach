@@ -17,7 +17,7 @@
 
 ## WhatsApp template
 
-WhatsApp-এ কথোপকথন শুরু করতে (বা ২৪ ঘণ্টা চুপ থাকার পর লিখতে) Meta-র **অনুমোদিত** template লাগে। আগে আপনার Meta Business অ্যাকাউন্টে সেটি তৈরি করুন, তারপর এখানে নিবন্ধন করুন: Meta-তে যেমন আছে হুবহু সেই **WhatsApp template name** এবং **Language** (যেমন `en_US`) দিন।
+WhatsApp-এ কথোপকথন শুরু করতে (বা ২৪ ঘণ্টা চুপ থাকার পর লিখতে) WhatsApp-এর **অনুমোদিত** template লাগে। আগে Twilio-তে (Content Template Builder) সেটি তৈরি করুন, তারপর এখানে নিবন্ধন করুন: এর **Twilio Content SID** (`HX` দিয়ে শুরু) দিন। Language ঘরটি ব্যবহৃত হয় না।
 
 ## জেনে রাখুন
 

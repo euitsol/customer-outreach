@@ -69,7 +69,7 @@
         <textarea name="body" placeholder="Reply to {{ person.first_name or person.display_name }}…"></textarea>
         {% if current.channel == 'whatsapp' %}
         <div class="row small">
-          <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in templates if t.channel == 'whatsapp' and t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endfor %}<option value="hello_world">hello_world (Meta sample)</option></select>
+          <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in templates if t.channel == 'whatsapp' and t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endfor %}</select>
           <input type="text" name="wa_language" value="en_US" style="max-width:90px">
           <input type="text" name="wa_params" placeholder="template values separated by |" style="max-width:260px">
         </div>

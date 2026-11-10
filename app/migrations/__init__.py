@@ -151,15 +151,14 @@ def ensure_defaults(conn):
             config={"smtp_host": config.SMTP_HOST, "imap_host": config.IMAP_HOST or ""},
             status="active" if config.SMTP_HOST else "disabled", is_default=True, created_at=now, updated_at=now))
     _ensure_env_mailbox(conn, t["mailboxes"], now)
-    if config.WHATSAPP_PHONE_NUMBER_ID and not conn.execute(
+    wa_from = (config.TWILIO_WHATSAPP_FROM or "").replace("whatsapp:", "")
+    if wa_from and not conn.execute(
             text("SELECT 1 FROM channel_accounts WHERE kind = 'whatsapp' AND external_id = :e"),
-            {"e": config.WHATSAPP_PHONE_NUMBER_ID}).first():
+            {"e": wa_from}).first():
         conn.execute(ch.insert().values(
-            kind="whatsapp", name="WhatsApp Business", address=config.WHATSAPP_DISPLAY_NUMBER or None,
-            external_id=config.WHATSAPP_PHONE_NUMBER_ID,
-            config={"business_account_id": config.WHATSAPP_BUSINESS_ACCOUNT_ID,
-                    "api_version": config.WHATSAPP_API_VERSION},
-            status="active" if config.WHATSAPP_TOKEN else "disabled",
+            kind="whatsapp", name="WhatsApp (Twilio)", address=wa_from, external_id=wa_from,
+            config={"provider": "twilio"},
+            status="active" if config.TWILIO_AUTH_TOKEN else "disabled",
             is_default=not conn.execute(text("SELECT 1 FROM channel_accounts WHERE kind = 'whatsapp'")).first(),
             created_at=now, updated_at=now))
 

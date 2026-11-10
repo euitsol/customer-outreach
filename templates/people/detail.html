@@ -46,7 +46,7 @@
           <div data-for="whatsapp" class="small muted">
             {% if wa_window %}WhatsApp 24-hour window is open: free text is fine.{% else %}No reply from them in the last 24 hours, so WhatsApp only allows an approved template:{% endif %}
             <div class="row mt1">
-              <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in wa_templates %}{% if t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endif %}{% endfor %}<option value="hello_world">hello_world (Meta sample)</option></select>
+              <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in wa_templates %}{% if t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endif %}{% endfor %}</select>
               <input type="text" name="wa_language" value="en_US" style="max-width:90px" title="Template language">
               <input type="text" name="wa_params" placeholder="template values: {{ p.first_name or 'Name' }} | …" style="max-width:280px">
             </div>
