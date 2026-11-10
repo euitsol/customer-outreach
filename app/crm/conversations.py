@@ -155,16 +155,22 @@ def record_whatsapp_status(session, item):
     if new == "read":
         m.read_at = item.get("timestamp")
         m.delivered_at = m.delivered_at or item.get("timestamp")
-    if m.sequence_message_id and new in ("read", "failed"):      # a campaign message: feed the campaign stats
+    if m.sequence_message_id and new in ("delivered", "read", "failed"):   # a campaign message: feed stats / outbox
         from app.models import Message
         seq = session.get(Message, m.sequence_message_id)
         if seq is not None:
-            if new == "read":
+            if new == "delivered":
+                session.add(Event(enrollment_id=seq.enrollment_id, stage=seq.position, type="delivered",
+                                  detail="Delivered on WhatsApp"))
+            elif new == "read":
                 session.add(Event(enrollment_id=seq.enrollment_id, stage=seq.position, type="opened",
                                   detail="Read on WhatsApp"))
             else:
                 session.add(Event(enrollment_id=seq.enrollment_id, stage=seq.position, type="failed",
                                   detail=(m.error or "Delivery failed")[:500]))
+                # shows up in Outbox > Failed (manual retry / skip); the stage already advanced, so nothing resends it
+                seq.status, seq.queued, seq.next_attempt_at = "failed", False, None
+                seq.last_error = (m.error or "Delivery failed")[:1000]
     return True
 
 

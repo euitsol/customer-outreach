@@ -3,20 +3,34 @@ import io
 from datetime import datetime, timedelta
 
 from flask import Blueprint, Response, abort, render_template, request
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import selectinload
 
-from app import mailboxes, settings as app_settings
+from app import config, mailboxes, settings as app_settings
 from app.clock import utcnow
-from app.models import Campaign, CampaignStep, Company, Enrollment, Event, Mailbox, Message, Person
+from app.models import (
+    Campaign, CampaignStep, Company, ConversationMessage, Enrollment, Event, Mailbox, Message, Person,
+)
 from app.sender import render_for
-from app.services import email_consent_ok, not_suppressed, sendable, skip_stage, steps_of
+from app.services import (
+    email_consent_ok, not_suppressed, phone_not_suppressed, sendable, skip_stage, steps_of, wa_consent_ok,
+)
 from app.views.common import back, db, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn
 
 bp = Blueprint("outbox", __name__)
 
-EVENT_TYPES = [("sent", "Sent"), ("failed", "Failed"), ("opened", "Opened"), ("clicked", "Clicked"),
+EVENT_TYPES = [("sent", "Sent"), ("delivered", "Delivered"), ("failed", "Failed"), ("opened", "Opened"), ("clicked", "Clicked"),
                ("replied", "Replied"), ("bounced", "Bounced"), ("unsubscribed", "Unsubscribed")]
+
+
+def _channel_clause():
+    """Campaign filter from ?channel=email|whatsapp (None = both)."""
+    ch = request.args.get("channel")
+    if ch == "whatsapp":
+        return Campaign.channel == "whatsapp"
+    if ch == "email":
+        return Campaign.channel != "whatsapp"
+    return None
 
 
 def _outbox_context(campaign=None):
@@ -30,9 +44,13 @@ def _outbox_context(campaign=None):
     now = utcnow()
     counts = {}
 
+    chan = _channel_clause()
+
     def with_filters(q):
         if cid:
             q = q.filter(Enrollment.campaign_id == cid)
+        if chan is not None:
+            q = q.filter(Enrollment.campaign_id.in_(sess.query(Campaign.id).filter(chan)))
         if term:
             q = (q.join(Person, Person.id == Enrollment.person_id)
                  .outerjoin(Company, Company.id == Person.company_id)
@@ -48,8 +66,9 @@ def _outbox_context(campaign=None):
         nsteps = (sess.query(func.count(CampaignStep.id)).filter(CampaignStep.campaign_id == Enrollment.campaign_id)
                   .correlate(Enrollment).scalar_subquery())
         q = (sess.query(Enrollment).join(Campaign, Campaign.id == Enrollment.campaign_id)
-             .filter(Campaign.status == "active", sendable(), Enrollment.stage < nsteps, not_suppressed(),
-                     email_consent_ok()))
+             .filter(Campaign.status == "active", sendable(), Enrollment.stage < nsteps,
+                     or_(and_(Campaign.channel != "whatsapp", not_suppressed(), email_consent_ok()),
+                         and_(Campaign.channel == "whatsapp", phone_not_suppressed(), wa_consent_ok()))))
         q = with_filters(q)
         if stage:
             q = q.filter(Enrollment.stage == stage - 1)
@@ -79,11 +98,14 @@ def _outbox_context(campaign=None):
             chosen[(eid, pos)] = mb
         sent_before = dict(sess.query(Message.enrollment_id, func.max(Message.position))
                            .filter(Message.enrollment_id.in_(ids), Message.status == "sent").group_by(Message.enrollment_id))
+        wa_from = (config.TWILIO_WHATSAPP_FROM or "").replace("whatsapp:", "") or "Twilio"
         for c in page.items:
             steps = cache.setdefault(c.campaign_id, steps_of(sess, c.campaign_id))
             nxt = next((x for x in steps if x.position == (c.stage or 0) + 1), None)
             pos = nxt.position if nxt else None
-            if pos and chosen.get((c.id, pos)) and (sent_before.get(c.id) or 0) < pos:
+            if c.campaign.channel == "whatsapp":
+                mbox = (f"WhatsApp {wa_from}", "approved template")
+            elif pos and chosen.get((c.id, pos)) and (sent_before.get(c.id) or 0) < pos:
                 mbox = (names.get(chosen[(c.id, pos)]), "chosen for this email")
             elif sent_before.get(c.id):
                 mbox = (names.get(chosen.get((c.id, sent_before[c.id]))), "same as the earlier email")
@@ -96,6 +118,7 @@ def _outbox_context(campaign=None):
         for m in page.items:
             rows.append(dict(msg=m, enrollment=m.enrollment, step=m.step, camp=m.enrollment.campaign))
     return dict(view=view, page=page, rows=rows, counts=counts, now=now, stage=stage, term=term, cid=cid,
+                channel=request.args.get("channel") or "",
                 campaigns=sess.query(Campaign).order_by(Campaign.name).all(), s=settings_now(),
                 max_attempts=settings_now()["retry_max"])
 
@@ -150,6 +173,11 @@ def message_view(mid):
     sess = db()
     m = get_or_404(Message, mid)
     c = m.enrollment
+    if c.campaign.channel == "whatsapp":
+        thread_msg = (sess.query(ConversationMessage).filter(ConversationMessage.sequence_message_id == m.id)
+                      .order_by(ConversationMessage.id.desc()).first())
+        return render_template("message.html", m=m, c=c, wa=True, thread_msg=thread_msg, subject=None,
+                               body=m.sent_body or "", snapshot=bool(m.sent_body))
     steps = steps_of(sess, c.campaign_id)
     if m.sent_body:
         subject, body, snapshot = m.sent_subject, m.sent_body, True
@@ -172,6 +200,9 @@ def _activity_query(sess):
     cid = int_arg("campaign")
     if cid:
         q = q.filter(Enrollment.campaign_id == cid)
+    chan = _channel_clause()
+    if chan is not None:
+        q = q.filter(chan)
     stage = int_arg("stage")
     if stage:
         q = q.filter(Event.stage == stage)

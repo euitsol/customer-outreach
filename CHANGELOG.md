@@ -8,6 +8,9 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **WhatsApp in the Outbox and Activity pages**: channel filter and badge, WhatsApp rows in *Scheduled* use the
+  WhatsApp consent / phone block-list rules, new *Delivered* event, read receipts shown as *Opened*, messages Twilio
+  could not deliver land in *Outbox > Failed* with the reason, and the message page shows template, delivery and read times.
 - **WhatsApp campaigns**: choose *WhatsApp* when creating a campaign. Each stage sends an approved Twilio
   template (Content SID + values with merge fields) to people's phone numbers, with the usual delays,
   follow-ups and stop-on-reply. Messages appear in the person's WhatsApp thread; read receipts count as opens.

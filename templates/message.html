@@ -1,12 +1,23 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pill %}
-{% block title %}Email to {{ c.email }}{% endblock %}
+{% block title %}{{ 'WhatsApp' if wa else 'Email' }} to {{ c.email }}{% endblock %}
 {% block content %}
 <div class="crumbs"><a href="{{ url_for('enrollments.detail', enrollment_id=c.id) }}">{{ c.email }}</a> / Stage {{ m.position }}</div>
+{% if wa %}
+<div class="page-head"><div><h1>WhatsApp template {{ m.step.wa_template or '' }}</h1>
+  <div class="sub">To {{ c.email }} · stage {{ m.position }} · {{ pill(m.status) }}{% if m.sent_at %} · sent {{ m.sent_at|dt }}{% endif %}{% if thread_msg %} · {{ pill(thread_msg.status) }}{% if thread_msg.delivered_at %} · delivered {{ thread_msg.delivered_at|dt }}{% endif %}{% if thread_msg.read_at %} · read {{ thread_msg.read_at|dt }}{% endif %}{% endif %}</div></div></div>
+<div class="card card-pad" style="max-width:760px">
+  {% if not snapshot %}<div class="flash warn mb2"><span>This message hasn't been sent yet.</span></div>{% endif %}
+  {% if m.last_error %}<div class="flash err mb2"><span>{{ m.last_error }}</span></div>{% endif %}
+  <div class="email-body">{{ body or 'Template values come from the stage settings.' }}</div>
+  {% if thread_msg %}<p class="small mt2"><a href="{{ url_for('inbox.index', c=thread_msg.conversation_id) }}">Open the WhatsApp conversation</a></p>{% endif %}
+</div>
+{% else %}
 <div class="page-head"><div><h1>{{ subject or '(no subject)' }}</h1>
   <div class="sub">To {{ c.email }} · stage {{ m.position }} · {{ pill(m.status) }}{% if m.sent_at %} · sent {{ m.sent_at|dt }}{% endif %}{% if m.mailbox %} · {{ 'from' if m.status == 'sent' else 'will send from' }} {{ m.mailbox.email }}{% endif %}</div></div></div>
 <div class="card card-pad" style="max-width:760px">
   {% if not snapshot %}<div class="flash warn mb2"><span>This email hasn't been sent. This is how it would look right now.</span></div>{% endif %}
   <div class="email-body">{{ body }}</div>
 </div>
+{% endif %}
 {% endblock %}

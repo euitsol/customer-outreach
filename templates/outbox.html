@@ -17,15 +17,17 @@
 </div>
 
 {% if view == 'failed' and counts.failed %}
-<div class="banner">Failed emails retry automatically up to <b>{{ max_attempts }}</b> times with a growing pause. After that they wait here for you: retry or skip them.</div>
+<div class="banner">Failed emails retry automatically up to <b>{{ max_attempts }}</b> times with a growing pause. After that they wait here for you: retry or skip them. WhatsApp messages that Twilio could not deliver (for example a number that is not on WhatsApp) also land here, with the reason, and are never retried automatically.</div>
 {% endif %}
 
 <div class="card">
   <form class="filters" method="get" action="{{ base_url }}" data-autosubmit>
     <input type="hidden" name="view" value="{{ view }}">
-    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ term }}" placeholder="Email or company"></label>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ term }}" placeholder="Email, number or company"></label>
     {% if not scoped %}<label class="field"><span class="lbl">Campaign</span>
       <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if cid == cp.id }}>{{ cp.name }}</option>{% endfor %}</select></label>{% endif %}
+    <label class="field"><span class="lbl">Channel</span>
+      <select name="channel"><option value="">All</option><option value="email" {{ 'selected' if channel == 'email' }}>Email</option><option value="whatsapp" {{ 'selected' if channel == 'whatsapp' }}>WhatsApp</option></select></label>
     <label class="field"><span class="lbl">Stage</span>
       <select name="stage"><option value="">All stages</option>{% for i in range(1, 9) %}<option value="{{ i }}" {{ 'selected' if stage == i }}>Stage {{ i }}</option>{% endfor %}</select></label>
     <button class="btn btn-primary">Apply</button><a class="btn btn-ghost" href="{{ base_url }}?view={{ view }}">Reset</a>
@@ -38,7 +40,7 @@
     <div class="table-wrap"><table class="tbl">
       <thead><tr>
         {% if view != 'upcoming' %}<th class="check"><input type="checkbox" id="check-all"></th>{% endif %}
-        <th>Person</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th><th>Mailbox</th>
+        <th>Person</th>{% if not scoped %}<th>Campaign</th>{% endif %}<th>Stage</th><th>Sent from</th>
         {% if view == 'upcoming' %}<th>Scheduled</th><th></th>
         {% elif view == 'queued' %}<th>State</th><th>Queued</th>
         {% else %}<th>Error</th><th class="num">Attempts</th><th>Next auto-retry</th>{% endif %}
@@ -49,9 +51,9 @@
           {% if view != 'upcoming' %}<td class="check"><input type="checkbox" class="row-check" name="ids" value="{{ r.msg.id }}"></td>{% endif %}
           <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}">{{ ct.email }}</a><div class="sub">{{ ct.full_name }}{% if ct.full_name and ct.company %} · {% endif %}{{ ct.company or '' }}</div></td>
           {% if not scoped %}<td>{{ r.camp.name }}</td>{% endif %}
-          <td class="nowrap">{% if r.step %}{{ r.step.position }}. {{ r.step.name }}{% endif %}</td>
+          <td class="nowrap">{% if r.step %}{{ r.step.position }}. {{ r.step.name }}{% endif %}{% if r.camp.channel == 'whatsapp' %} <span class="pill whatsapp nodot">WhatsApp</span>{% endif %}</td>
           {% if view == 'upcoming' %}<td>{{ r.mailbox[0] or '-' }}<div class="sub">{{ r.mailbox[1] }}</div></td>
-          {% else %}<td>{{ r.msg.mailbox.email if r.msg.mailbox else 'automatic' }}</td>{% endif %}
+          {% else %}<td>{{ r.msg.mailbox.email if r.msg.mailbox else ('WhatsApp' if r.camp.channel == 'whatsapp' else 'automatic') }}</td>{% endif %}
           {% if view == 'upcoming' %}
             <td class="nowrap">{{ pill('due' if (not r.due or r.due <= now) else 'scheduled', 'Now' if not r.due else (r.due|dt)) }} <span class="muted small">{{ r.due|when if r.due and r.due > now }}</span></td>
             <td class="right"><a class="btn btn-sm" href="{{ url_for('enrollments.detail', enrollment_id=ct.id) }}#stage-{{ r.step.position if r.step else 1 }}">Edit</a></td>
@@ -77,7 +79,7 @@
     {% endif %}
   </form>
   {% else %}
-  <div class="empty"><h3>{{ {'upcoming': 'Nothing scheduled', 'queued': 'Nothing queued', 'failed': 'No failed emails'}[view] }}</h3>
+  <div class="empty"><h3>{{ {'upcoming': 'Nothing scheduled', 'queued': 'Nothing queued', 'failed': 'Nothing failed'}[view] }}</h3>
     <p>{{ {'upcoming': 'Start a campaign with people enrolled to see what the worker will send next.', 'queued': 'Use "Send now" on an enrollment or stage to queue an email ahead of schedule.', 'failed': 'Everything that was attempted has been delivered.'}[view] }}</p></div>
   {% endif %}
 </div>

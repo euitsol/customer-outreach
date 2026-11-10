@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, pill, pager %}
-{% block title %}Email activity{% endblock %}
+{% block title %}Activity{% endblock %}
 {% block content %}
 {% set args = request.args %}
 <div class="page-head">
-  <div><h1>Email activity</h1><div class="sub">Every campaign send, open, click, reply, bounce and failure. Changes to records are in the <a href="{{ url_for('workspace.audit_log') }}">audit log</a>.</div></div>
+  <div><h1>Activity</h1><div class="sub">Every campaign send, delivery, open / read, click, reply, bounce and failure, on email and WhatsApp. Changes to records are in the <a href="{{ url_for('workspace.audit_log') }}">audit log</a>.</div></div>
   <div class="page-actions"><a class="btn" href="{{ url_for('outbox.activity_export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export CSV</a></div>
 </div>
 <div class="card">
   <form class="filters" method="get" data-autosubmit>
-    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email address"></label>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email address or number"></label>
     <label class="field"><span class="lbl">Campaign</span>
       <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign')|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Channel</span>
+      <select name="channel"><option value="">All</option><option value="email" {{ 'selected' if args.get('channel') == 'email' }}>Email</option><option value="whatsapp" {{ 'selected' if args.get('channel') == 'whatsapp' }}>WhatsApp</option></select></label>
     <label class="field"><span class="lbl">Event</span>
       <select name="type"><option value="">All events</option>{% for k, label in event_types %}<option value="{{ k }}" {{ 'selected' if k in selected_types }}>{{ label }}</option>{% endfor %}</select></label>
     <label class="field"><span class="lbl">Stage</span>
@@ -29,7 +31,7 @@
         <td class="nowrap" title="{{ ev.created_at|ago }}">{{ ev.created_at|dt }}</td>
         <td>{{ pill(ev.type) }}</td>
         <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=c.id) }}">{{ c.email }}</a>{% if c.company %}<div class="sub">{{ c.company }}</div>{% endif %}</td>
-        <td><a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a></td>
+        <td><a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a>{% if camp.channel == 'whatsapp' %} <span class="pill whatsapp nodot">WhatsApp</span>{% endif %}</td>
         <td>{{ ev.stage or '' }}</td>
         <td class="small {{ 'muted' if ev.type not in ('failed','bounced') else '' }}" style="max-width:420px;{{ 'color:var(--bad)' if ev.type in ('failed','bounced') }}">{{ (ev.detail or '')|truncate(140) }}</td>
       </tr>

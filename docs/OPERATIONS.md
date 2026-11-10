@@ -108,6 +108,9 @@ Restoring an older backup is fine: the containers migrate it forward on start.
    `/webhooks/twilio/status`, passed with every message, so nothing to configure there.
 4. *Workspace > Integrations*: send a test to your phone (sandbox: join it first); reply and the
    message appears in the Inbox.
+   Also set the sender's **Fallback URL** to the same address (retries are safe: duplicates are ignored) and its
+   **Status callback URL** to `https://<TRACK_BASE_URL host>/webhooks/twilio/status` (messages sent by the app
+   already carry it, this covers anything sent from elsewhere).
 5. Create templates in Twilio's Content Template Builder, get them approved, and register each Content
    SID (`HX...`) in *Templates* (channel WhatsApp) to use them outside the 24-hour window. Template
    placeholders `{{1}}`, `{{2}}` are filled from "template values".

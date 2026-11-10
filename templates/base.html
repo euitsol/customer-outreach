@@ -33,7 +33,7 @@
       <a href="{{ url_for('enrollments.index') }}" class="{{ 'active' if ep.startswith('enrollments.') and ep != 'enrollments.in_campaign' }}">{{ icon('users') }} Enrollments</a>
       <a href="{{ url_for('outbox.index') }}" class="{{ 'active' if ep in ('outbox.index','outbox.action') }}">{{ icon('inbox') }} Outbox
         {% if nav.failed %}<span class="count bad" title="Failed emails">{{ nav.failed }}</span>{% elif nav.queued %}<span class="count">{{ nav.queued }}</span>{% endif %}</a>
-      <a href="{{ url_for('outbox.activity') }}" class="{{ 'active' if ep.startswith('outbox.activity') }}">{{ icon('activity') }} Email activity</a>
+      <a href="{{ url_for('outbox.activity') }}" class="{{ 'active' if ep.startswith('outbox.activity') }}">{{ icon('activity') }} Activity</a>
       <a href="{{ url_for('imports.upload') }}" class="{{ 'active' if ep.startswith('imports.') }}">{{ icon('upload') }} Import</a>
       <div class="nav-label">Library</div>
       <a href="{{ url_for('admin.templates') }}" class="{{ 'active' if ep.startswith('admin.templ') }}">{{ icon('file') }} Templates</a>

@@ -16,4 +16,5 @@ A running log of what happened to your campaign emails. Use it to see who engage
 
 * **Opened** and **clicked** depend on tracking, which can be switched off per campaign or globally ([Sending settings](/help/settings)). Some mail programs block tracking pixels, so opens are approximate. An **Opened** row shows the IP address that loaded the tracking image in its detail column (and in the CSV export). Gmail, Apple Mail and some other programs load images through their own servers, so that address is often the provider's, not the reader's.
 * Replies and bounces are detected from your mailbox (IMAP).
+* WhatsApp campaigns show here too (filter **Channel**): *Sent* when Twilio accepts the message, *Delivered* when it reaches the phone, *Opened* when the person reads it (detail "Read on WhatsApp"), *Failed* with the reason when it cannot be delivered, and *Replied* when they answer.
 * Unsubscribes are recorded here and also added to [Do not contact](/help/suppression).

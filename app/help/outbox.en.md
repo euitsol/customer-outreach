@@ -34,4 +34,5 @@ Click a message to see exactly what was sent or will be sent.
 
 Failures retry automatically a few times. After that, use **Retry**. The number of attempts and the pause between them are set in [Sending settings](/help/settings).
 
-* **Mailbox** column: the mailbox each email goes out from (chosen for that email, the same as the person's earlier email, or the campaign's automatic rotation).
+* **WhatsApp campaigns** appear here too, marked *WhatsApp*, with the filter **Channel**. The *Sent from* column shows your WhatsApp number. A WhatsApp message that Twilio could not deliver (for example the number is not on WhatsApp) moves to **Failed** with the reason; it is not retried automatically, so retry or skip it yourself.
+* **Sent from** column (email): the mailbox each email goes out from (chosen for that email, the same as the person's earlier email, or the campaign's automatic rotation).
