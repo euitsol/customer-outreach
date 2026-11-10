@@ -30,6 +30,10 @@ Click a message to see exactly what was sent or will be sent.
 2. Is the campaign **active**? Is it outside the send window or over the daily limit ([Sending settings](/help/settings))?
 3. Is the person replied, unsubscribed, bounced, needs verification, paused or do-not-contact? The enrollment page says why ([Enrollments](/help/enrollments)).
 
+## Why is something still waiting?
+
+The banner above **Scheduled** shows today's sends against the daily limit, each mailbox's sent / limit, and any reason sending is held (paused, outside the send window, a limit reached). Emails that were due yesterday are simply due now: the worker sends them oldest first as the limits allow, so you never need to reschedule them. A campaign with no mailbox ticked sends only from the default mailbox; tick more under the campaign's Settings > Send from.
+
 ## Good to know
 
 Failures retry automatically a few times. After that, use **Retry**. The number of attempts and the pause between them are set in [Sending settings](/help/settings).

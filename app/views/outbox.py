@@ -9,13 +9,14 @@ from sqlalchemy.orm import selectinload
 from app import config, mailboxes, settings as app_settings
 from app.clock import utcnow
 from app.models import (
-    Campaign, CampaignStep, Company, ConversationMessage, Enrollment, Event, Mailbox, Message, Person,
+    Campaign, CampaignStep, Company, Conversation, ConversationMessage, Enrollment, Event, Mailbox, Message,
+    Person,
 )
 from app.sender import render_for
 from app.services import (
     email_consent_ok, not_suppressed, phone_not_suppressed, sendable, skip_stage, steps_of, wa_consent_ok,
 )
-from app.views.common import back, db, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn
+from app.views.common import Page, back, db, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn
 
 bp = Blueprint("outbox", __name__)
 
@@ -31,6 +32,35 @@ def _channel_clause():
     if ch == "email":
         return Campaign.channel != "whatsapp"
     return None
+
+
+def _sending_state(sess, s, now):
+    """Why scheduled emails may be waiting right now: limits, mailboxes, send window."""
+    from app.worker import sent_today as email_sent_today
+    counts = mailboxes.sent_today(sess, s)
+    boxes = mailboxes.usable(sess)
+    state = dict(sent=email_sent_today(sess, s), limit=s["daily_limit"], reasons=[], hints=[],
+                 boxes=[dict(email=m.email, sent=counts.get(m.id, 0), limit=m.daily_limit,
+                             full=not mailboxes.has_room(m, counts)) for m in boxes])
+    reasons = state["reasons"]
+    if s["sending_paused"]:
+        reasons.append("Sending is paused (Settings).")
+    allowed, opens_at = app_settings.in_send_window(s, now)
+    if not allowed:
+        when = app_settings.to_local(opens_at, s).strftime("%a %H:%M") if opens_at else "?"
+        reasons.append(f"Outside the send window: sending resumes {when} ({s['timezone']}).")
+    if state["limit"] and state["sent"] >= state["limit"]:
+        reasons.append(f"The daily limit ({state['limit']}) is used up: sending resumes after midnight ({s['timezone']}).")
+    if not boxes:
+        reasons.append("No active mailbox: add or enable one under Workspace > Mailboxes.")
+    full_ids = set(mailboxes.campaigns_without_room(sess, s))
+    for c in sess.query(Campaign).filter(Campaign.status == "active", Campaign.channel != "whatsapp"):
+        if boxes and c.id in full_ids:
+            reasons.append(f"'{c.name}': every mailbox it may use has reached its daily limit.")
+        elif not (c.mailbox_ids or []) and len(boxes) > 1:
+            state["hints"].append(f"'{c.name}' sends only from the default mailbox. Tick more mailboxes under its "
+                                  "Settings > Send from to use their daily limits too.")
+    return state
 
 
 def _outbox_context(campaign=None):
@@ -119,6 +149,8 @@ def _outbox_context(campaign=None):
             rows.append(dict(msg=m, enrollment=m.enrollment, step=m.step, camp=m.enrollment.campaign))
     return dict(view=view, page=page, rows=rows, counts=counts, now=now, stage=stage, term=term, cid=cid,
                 channel=request.args.get("channel") or "",
+                state=(_sending_state(sess, settings_now(), now)
+                       if view == "upcoming" and request.args.get("channel") != "whatsapp" else None),
                 campaigns=sess.query(Campaign).order_by(Campaign.name).all(), s=settings_now(),
                 max_attempts=settings_now()["retry_max"])
 
@@ -219,10 +251,95 @@ def _activity_query(sess):
     return q.order_by(Event.id.desc())
 
 
+# One-to-one messages carry a status, not events; this maps the Event filter onto those statuses.
+_DIRECT_STATUS = {"sent": ("sent", "delivered", "read"), "delivered": ("delivered", "read"),
+                  "opened": ("read",), "failed": ("failed",)}
+
+
+def _direct_query(sess):
+    """Messages sent one-to-one (Inbox replies, person page, API, MCP). Campaign sends are Events already.
+    None when the current filters cannot match any of them."""
+    if request.args.get("source") == "campaign" or int_arg("campaign") or int_arg("stage"):
+        return None
+    q = (sess.query(ConversationMessage, Conversation, Person)
+         .join(Conversation, Conversation.id == ConversationMessage.conversation_id)
+         .join(Person, Person.id == Conversation.person_id)
+         .filter(ConversationMessage.direction == "out", ConversationMessage.sequence_message_id.is_(None)))
+    types = [t for t in request.args.getlist("type") if t in dict(EVENT_TYPES)]
+    if types:
+        statuses = set()
+        for t in types:
+            statuses.update(_DIRECT_STATUS.get(t, ()))
+        if not statuses:
+            return None
+        q = q.filter(ConversationMessage.status.in_(statuses))
+    ch = request.args.get("channel")
+    if ch in ("email", "whatsapp"):
+        q = q.filter(ConversationMessage.channel == ch)
+    term = (request.args.get("q") or "").strip().lower()
+    if term:
+        q = q.filter(or_(func.lower(func.coalesce(ConversationMessage.recipient, "")).like(f"%{term}%"),
+                         func.lower(func.coalesce(Person.email, "")).like(f"%{term}%"),
+                         func.lower(func.coalesce(Person.first_name, "") + " " + func.coalesce(Person.last_name, ""))
+                         .like(f"%{term}%")))
+    when = func.coalesce(ConversationMessage.sent_at, ConversationMessage.created_at)
+    for key, op in (("from", "ge"), ("to", "lt")):
+        v = request.args.get(key)
+        try:
+            d = datetime.strptime(v, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            continue
+        q = q.filter(when >= d) if op == "ge" else q.filter(when < d + timedelta(days=1))
+    return q.order_by(when.desc(), ConversationMessage.id.desc())
+
+
+def _event_row(ev, c, camp):
+    return dict(when=ev.created_at, kind=ev.type, channel=camp.channel, source="campaign", who=c.email,
+                sub=c.company, enrollment_id=c.id, person=None, conversation_id=None, campaign=camp,
+                stage=ev.stage, detail=ev.detail or "", bad=ev.type in ("failed", "bounced"))
+
+
+def _direct_row(m, conv, person):
+    failed = m.status == "failed"
+    return dict(when=m.sent_at or m.created_at, kind=m.status if m.status in ("sent", "delivered", "read", "failed") else "sent",
+                channel=m.channel, source="direct", who=m.recipient or "", sub=m.sender or "", enrollment_id=None,
+                person=person, conversation_id=conv.id, campaign=None, stage=None,
+                detail=(m.error if failed else (m.subject or m.body or "")) or "", bad=failed)
+
+
+def _merged_rows(sess, need):
+    """(rows newest first, total) over campaign events and one-to-one messages; `need` rows from each source."""
+    evq = None if request.args.get("source") == "direct" else _activity_query(sess)
+    dmq = _direct_query(sess)
+    total, rows = 0, []
+    if evq is not None:
+        total += evq.order_by(None).count()
+        rows += [_event_row(*t) for t in evq.limit(need).all()]
+    if dmq is not None:
+        total += dmq.order_by(None).count()
+        rows += [_direct_row(*t) for t in dmq.limit(need).all()]
+    rows.sort(key=lambda r: r["when"] or datetime.min, reverse=True)
+    return rows, total
+
+
+class _Rows(Page):
+    """A Page over already-merged rows (same attributes the pager macro reads)."""
+
+    def __init__(self, items, total, page, per_page):
+        self.items, self.total, self.page, self.per_page = items, total, page, per_page
+        self.pages = max(1, -(-total // per_page))
+
+
 @bp.route("/activity")
 def activity():
     sess = db()
-    page = paginate(_activity_query(sess), 50)
+    per = int_arg("per_page", 50)
+    per = per if per in (25, 50, 100, 250) else 50
+    page_no = max(1, int_arg("page", 1))
+    rows, total = _merged_rows(sess, page_no * per)
+    pages = max(1, -(-total // per))
+    page_no = min(page_no, pages)
+    page = _Rows(rows[(page_no - 1) * per:page_no * per], total, page_no, per)
     return render_template("activity.html", page=page, event_types=EVENT_TYPES,
                            campaigns=sess.query(Campaign).order_by(Campaign.name).all(),
                            selected_types=request.args.getlist("type"), s=settings_now())
@@ -234,9 +351,12 @@ def activity_export():
     s = settings_now()
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["time", "event", "stage", "email", "company", "campaign", "detail"])
-    for ev, c, camp in _activity_query(sess).limit(50000):
-        w.writerow([app_settings.to_local(ev.created_at, s).strftime("%Y-%m-%d %H:%M:%S"), ev.type, ev.stage,
-                    c.email, c.company, camp.name, ev.detail])
+    w.writerow(["time", "event", "source", "channel", "stage", "recipient", "company or sender", "campaign", "detail"])
+    rows, _ = _merged_rows(sess, 50000)
+    for r in rows[:50000]:
+        who = r["person"].display_name if r["person"] is not None else ""
+        w.writerow([app_settings.to_local(r["when"], s).strftime("%Y-%m-%d %H:%M:%S") if r["when"] else "",
+                    r["kind"], r["source"], r["channel"], r["stage"] or "", r["who"] or who, r["sub"] or "",
+                    r["campaign"].name if r["campaign"] else "", r["detail"]])
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": "attachment; filename=activity.csv"})

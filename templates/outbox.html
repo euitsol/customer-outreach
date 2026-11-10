@@ -16,6 +16,16 @@
   <a href="{{ base_url }}?{{ qs(args, ['view','page'], view='failed') }}" class="{{ 'active' if view == 'failed' }}">Failed <span class="count {{ 'bad' if counts.failed }}">{{ counts.failed }}</span></a>
 </div>
 
+{% if state %}
+<div class="banner{{ ' bad' if state.reasons }}">
+  <b>Today:</b> {{ state.sent }}{% if state.limit %} of {{ state.limit }}{% endif %} campaign emails sent
+  {% if state.boxes %}&middot; {% for b in state.boxes %}{{ b.email }} {{ b.sent }}{% if b.limit %}/{{ b.limit }}{% endif %}{% if b.full %} (full){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+  {% for r in state.reasons %}<div>{{ r }}</div>{% endfor %}
+  {% for h in state.hints %}<div class="small">{{ h }}</div>{% endfor %}
+  {% if not state.reasons and counts.upcoming %}<div class="small">Overdue emails are simply due now: the worker sends them oldest first as the limits above allow, no need to reschedule.</div>{% endif %}
+</div>
+{% endif %}
+
 {% if view == 'failed' and counts.failed %}
 <div class="banner">Failed emails retry automatically up to <b>{{ max_attempts }}</b> times with a growing pause. After that they wait here for you: retry or skip them. WhatsApp messages that Twilio could not deliver (for example a number that is not on WhatsApp) also land here, with the reason, and are never retried automatically.</div>
 {% endif %}

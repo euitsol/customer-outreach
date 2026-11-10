@@ -8,6 +8,9 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **Activity shows every sent message**: one-to-one emails and WhatsApp messages (Inbox replies, person page, API,
+  Claude) now appear next to campaign events, with a *Source* filter and in the CSV export. The Outbox *Scheduled*
+  tab shows today's sends vs the daily and per-mailbox limits and why anything is waiting.
 - **Create campaigns from the API and MCP**: `POST /api/v1/campaigns` and the `create_campaign` MCP tool create a
   draft email or WhatsApp campaign with its stages; starting a WhatsApp campaign through the API/MCP now also checks
   that every stage has a Content SID.

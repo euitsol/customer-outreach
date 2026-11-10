@@ -4,14 +4,16 @@
 {% block content %}
 {% set args = request.args %}
 <div class="page-head">
-  <div><h1>Activity</h1><div class="sub">Every campaign send, delivery, open / read, click, reply, bounce and failure, on email and WhatsApp. Changes to records are in the <a href="{{ url_for('workspace.audit_log') }}">audit log</a>.</div></div>
+  <div><h1>Activity</h1><div class="sub">Every email and WhatsApp message sent from anywhere in the app (campaigns, Inbox replies, person pages, API and Claude), with deliveries, opens, clicks, replies, bounces and failures. Changes to records are in the <a href="{{ url_for('workspace.audit_log') }}">audit log</a>.</div></div>
   <div class="page-actions"><a class="btn" href="{{ url_for('outbox.activity_export') }}?{{ qs(args, ['page']) }}">{{ icon('download') }} Export CSV</a></div>
 </div>
 <div class="card">
   <form class="filters" method="get" data-autosubmit>
-    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email address or number"></label>
+    <label class="field search"><span class="lbl">Search</span><input type="search" name="q" value="{{ args.get('q','') }}" placeholder="Email, number or name"></label>
     <label class="field"><span class="lbl">Campaign</span>
       <select name="campaign"><option value="">All</option>{% for cp in campaigns %}<option value="{{ cp.id }}" {{ 'selected' if args.get('campaign')|string == cp.id|string }}>{{ cp.name }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="lbl">Source</span>
+      <select name="source"><option value="">All</option><option value="campaign" {{ 'selected' if args.get('source') == 'campaign' }}>Campaigns</option><option value="direct" {{ 'selected' if args.get('source') == 'direct' }}>One-to-one (Inbox, person page, API)</option></select></label>
     <label class="field"><span class="lbl">Channel</span>
       <select name="channel"><option value="">All</option><option value="email" {{ 'selected' if args.get('channel') == 'email' }}>Email</option><option value="whatsapp" {{ 'selected' if args.get('channel') == 'whatsapp' }}>WhatsApp</option></select></label>
     <label class="field"><span class="lbl">Event</span>
@@ -26,14 +28,21 @@
   <div class="table-wrap"><table class="tbl tbl-compact">
     <thead><tr><th>When</th><th>Event</th><th>Recipient</th><th>Campaign</th><th>Stage</th><th>Detail</th></tr></thead>
     <tbody>
-    {% for ev, c, camp in page.items %}
+    {% for r in page.items %}
       <tr>
-        <td class="nowrap" title="{{ ev.created_at|ago }}">{{ ev.created_at|dt }}</td>
-        <td>{{ pill(ev.type) }}</td>
-        <td><a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=c.id) }}">{{ c.email }}</a>{% if c.company %}<div class="sub">{{ c.company }}</div>{% endif %}</td>
-        <td><a href="{{ url_for('campaigns.overview', cid=camp.id) }}">{{ camp.name }}</a>{% if camp.channel == 'whatsapp' %} <span class="pill whatsapp nodot">WhatsApp</span>{% endif %}</td>
-        <td>{{ ev.stage or '' }}</td>
-        <td class="small {{ 'muted' if ev.type not in ('failed','bounced') else '' }}" style="max-width:420px;{{ 'color:var(--bad)' if ev.type in ('failed','bounced') }}">{{ (ev.detail or '')|truncate(140) }}</td>
+        <td class="nowrap" title="{{ r.when|ago if r.when else '' }}">{{ r.when|dt if r.when }}</td>
+        <td>{{ pill(r.kind) }}</td>
+        <td>
+          {% if r.source == 'campaign' %}<a class="primary" href="{{ url_for('enrollments.detail', enrollment_id=r.enrollment_id) }}">{{ r.who }}</a>{% if r.sub %}<div class="sub">{{ r.sub }}</div>{% endif %}
+          {% else %}<a class="primary" href="{{ url_for('people.detail', person_id=r.person.id) }}">{{ r.person.display_name }}</a><div class="sub">{{ r.who }}{% if r.sub %} &middot; from {{ r.sub }}{% endif %}</div>{% endif %}
+        </td>
+        <td>
+          <span class="pill {{ r.channel }} nodot">{{ 'WhatsApp' if r.channel == 'whatsapp' else 'Email' }}</span>
+          {% if r.source == 'campaign' %}<a href="{{ url_for('campaigns.overview', cid=r.campaign.id) }}">{{ r.campaign.name }}</a>
+          {% else %}<a href="{{ url_for('inbox.index', c=r.conversation_id) }}">One-to-one</a>{% endif %}
+        </td>
+        <td>{{ r.stage or '' }}</td>
+        <td class="small {{ 'muted' if not r.bad else '' }}" style="max-width:420px;{{ 'color:var(--bad)' if r.bad }}">{{ r.detail|truncate(140) }}</td>
       </tr>
     {% endfor %}
     </tbody>

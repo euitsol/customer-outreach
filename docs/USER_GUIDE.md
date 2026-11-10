@@ -171,7 +171,7 @@ paused, do-not-contact, or the address being on the do-not-contact list.
 - **Overview** tab: a funnel per stage (sent, opened, clicked, replied, failed, waiting) with buttons to
   retry failures, send a stage now, or cancel queued sends.
 - **Outbox**: scheduled, queued and failed messages across campaigns (email and WhatsApp; filter by channel).
-- **Activity**: every sent / delivered / opened (read) / clicked / replied / bounced / unsubscribed event, filterable
+- **Activity**: every email and WhatsApp message sent from anywhere (campaigns and one-to-one from the Inbox, person pages, API); every sent / delivered / opened (read) / clicked / replied / bounced / unsubscribed event, filterable
   and exportable.
 
 ### WhatsApp campaigns
