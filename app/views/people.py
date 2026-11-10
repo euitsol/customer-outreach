@@ -405,7 +405,7 @@ def message(person_id):
     sess = db()
     p = get_or_404(Person, person_id)
     channel = request.form.get("channel") or "email"
-    template = (request.form.get("wa_template") or "").strip() or None
+    template = (request.form.get("wa_sid") or request.form.get("wa_template") or "").strip() or None
     params = [x.strip() for x in (request.form.get("wa_params") or "").split("|") if x.strip()]
     try:
         m = conv_svc.send(sess, p, channel, request.form.get("body"), subject=request.form.get("subject"),

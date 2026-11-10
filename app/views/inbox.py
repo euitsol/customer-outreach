@@ -59,7 +59,7 @@ def index():
 def reply(conversation_id):
     sess = db()
     conv = get_or_404(Conversation, conversation_id)
-    template = (request.form.get("wa_template") or "").strip() or None
+    template = (request.form.get("wa_sid") or request.form.get("wa_template") or "").strip() or None
     params = [x.strip() for x in (request.form.get("wa_params") or "").split("|") if x.strip()]
     try:
         conv_svc.send(sess, conv.person, conv.channel, request.form.get("body"), subject=request.form.get("subject"),
