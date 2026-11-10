@@ -70,6 +70,7 @@ The server must be reachable over HTTPS.
 | `log_activity` | write | Note / call / meeting on a person, company or deal |
 | `list_tasks`, `create_task`, `update_task` | read / write | Follow-ups: open, today, overdue, done |
 | `list_campaigns`, `get_campaign` | read | Campaigns and per-stage funnel |
+| `create_campaign` | write | Create a **draft** email or WhatsApp campaign with its stages (WhatsApp stage = Twilio Content SID + template values) |
 | `enroll_in_campaign` | write | Add people (ids or emails) to a sequence |
 | `set_campaign_status` | **send** | Start / pause / archive a campaign |
 | `list_conversations`, `get_conversation` | read | Inbox threads and messages; WhatsApp 24h window status |

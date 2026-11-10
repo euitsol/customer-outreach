@@ -356,7 +356,7 @@ def get_campaign(session, campaign_id):
     out["status_counts"] = status_counts(session, c.id)
     out["engagement"] = engagement_stats(session, c.id)
     out["stages"] = [{"position": r["step"].position, "name": r["step"].name, "subject": r["step"].subject,
-                      "delay_hours": r["step"].delay_hours, "sent": r["sent"], "failed": r["failed"],
+                      "delay_hours": r["step"].delay_hours, "wa_template": r["step"].wa_template, "sent": r["sent"], "failed": r["failed"],
                       "waiting": r["waiting"], "opened": r["opened"], "replied": r["replied"]}
                      for r in stage_stats(session, c, steps)]
     return out
@@ -433,13 +433,49 @@ def import_campaign(session, actor, name, csv_text, mapping=None, dry_run=False)
                 campaign_status=camp.status)
 
 
+def create_campaign(session, actor, name, channel="email", description=None, daily_limit=None, steps=None):
+    """Create a draft campaign with its stages. `steps`: [{name, delay_hours | delay_days, subject, body,
+    wa_template}]. A WhatsApp stage needs a Twilio Content SID (HX...) and keeps its template values in `body`."""
+    from app.crm import audit
+    from app.models import CampaignStep
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("name is required.")
+    if channel not in ("email", "whatsapp"):
+        raise ValueError("channel must be email or whatsapp.")
+    if session.query(Campaign).filter(func.lower(Campaign.name) == name.lower()).first():
+        raise ValueError("A campaign with that name already exists.")
+    camp = Campaign(name=name, description=(description or "").strip() or None, channel=channel,
+                    daily_limit=int(daily_limit) if daily_limit else None, status="draft", is_active=False)
+    session.add(camp)
+    session.flush()
+    if not steps:
+        create_default_steps(session, camp)
+    for i, st in enumerate(steps or [], start=1):
+        sid = (st.get("wa_template") or "").strip() or None
+        if channel == "whatsapp" and not (sid and sid.startswith("HX")):
+            raise ValueError(f"Stage {i}: a WhatsApp stage needs a Twilio Content SID starting with HX.")
+        hours = int(st.get("delay_hours") if st.get("delay_hours") is not None else (st.get("delay_days") or 0) * 24)
+        session.add(CampaignStep(campaign_id=camp.id, position=i, name=(st.get("name") or f"Stage {i}")[:200],
+                                 subject=(st.get("subject") or None), body=(st.get("body") or None),
+                                 delay_hours=hours, wa_template=sid if channel == "whatsapp" else None))
+    session.flush()
+    audit.record(session, actor, "create", "campaign", camp.id, {"name": name, "channel": channel, "via": "api"})
+    return get_campaign(session, camp.id)
+
+
 def set_campaign_state(session, actor, campaign_id, status):
     from app.crm import audit
     camp = _get(session, Campaign, campaign_id, "Campaign")
     if status not in ("active", "paused", "archived"):
         raise ValueError("status must be active, paused or archived.")
     if status == "active" and not steps_of(session, camp.id):
-        raise ValueError("Add at least one email stage before starting.")
+        raise ValueError("Add at least one stage before starting.")
+    if status == "active" and camp.channel == "whatsapp":
+        if not whatsapp.configured():
+            raise ValueError("WhatsApp isn't connected (TWILIO_* settings).")
+        if any(not (x.wa_template or "").strip() for x in steps_of(session, camp.id)):
+            raise ValueError("Every WhatsApp stage needs a Twilio Content SID before the campaign can start.")
     old = camp.status
     set_campaign_status(camp, status)
     if status == "active":

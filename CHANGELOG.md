@@ -8,6 +8,9 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **Create campaigns from the API and MCP**: `POST /api/v1/campaigns` and the `create_campaign` MCP tool create a
+  draft email or WhatsApp campaign with its stages; starting a WhatsApp campaign through the API/MCP now also checks
+  that every stage has a Content SID.
 - **WhatsApp cooldown between campaigns**: a person who got a message from one WhatsApp campaign waits
   `TWILIO_COOLDOWN_DAYS` (default 7) before another WhatsApp campaign messages them, so one thread isn't flooded.
 - **WhatsApp in the Outbox and Activity pages**: channel filter and badge, WhatsApp rows in *Scheduled* use the

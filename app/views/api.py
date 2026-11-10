@@ -234,6 +234,14 @@ def campaigns_get(sess, cid):
     return actions.get_campaign(sess, cid)
 
 
+@bp.route("/campaigns", methods=["POST"])
+@endpoint("write")
+def campaigns_create(sess):
+    b = body()
+    return actions.create_campaign(sess, g.api_actor, b.get("name"), b.get("channel") or "email",
+                                   b.get("description"), b.get("daily_limit"), b.get("steps")), 201
+
+
 @bp.route("/campaigns/import", methods=["POST"])
 @endpoint("write")
 def campaigns_import(sess):

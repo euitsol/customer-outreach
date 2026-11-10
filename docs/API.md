@@ -89,6 +89,7 @@ Dates: ISO 8601, UTC (`2026-11-03T09:30`, `2026-11-03`). List endpoints take `li
 |---|---|---|---|
 | GET | `/campaigns?archived=1` | read | With headline stats |
 | GET | `/campaigns/<id>` | read | Status counts, engagement, per-stage funnel |
+| POST | `/campaigns` | write | `{"name": "...", "channel": "email"|"whatsapp", "description"?, "daily_limit"?, "steps"?: [{"name", "delay_days"|"delay_hours", "wa_template": "HX...", "body": "{{first_name\|there}} \| {{company}}", "subject"?}]}` - creates a **draft** campaign (default three email stages when `steps` is omitted). A WhatsApp stage needs a Twilio Content SID; its `body` holds the template values |
 | POST | `/campaigns/import` | write | `{"name": "...", "csv": "<file text>", "mapping": {"Website": "company_website"}?, "dry_run": true?}` - same as the Import page: creates a **draft** campaign (or fills the one with that name), upserts people by email, enrolls them and loads per-person stage subject / body / date / mailbox columns (`Email 1 mailbox`: the mailbox's email address or id). `dry_run` only reports what would happen |
 | POST | `/campaigns/<id>/enrollments` | write | `{"person_ids": [1,2], "emails": ["a@b.io"]}` |
 | POST | `/campaigns/<id>/status` | send | `{"status": "active"|"paused"|"archived"}` |

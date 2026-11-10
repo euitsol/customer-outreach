@@ -23,7 +23,7 @@ from app.crm import actions, apikeys, audit
 from app.db import SessionLocal, init_db
 
 INSTRUCTIONS = """\
-You are connected to the user's CRM (people, companies, deals, tasks, notes, email campaigns and a
+You are connected to the user's CRM (people, companies, deals, tasks, notes, email and WhatsApp campaigns and a
 shared email/WhatsApp inbox).
 
 Working rules:
@@ -320,6 +320,17 @@ async def list_campaigns(ctx: Context, include_archived: bool = False) -> list:
 async def get_campaign(campaign_id: int, ctx: Context) -> dict:
     """One campaign: its sequence stages with per-stage funnel numbers and engagement."""
     return await run(ctx, "read", actions.get_campaign, campaign_id)
+
+
+@server.tool(annotations=WRITE)
+async def create_campaign(name: str, ctx: Context, channel: str = "email", description: str | None = None,
+                          daily_limit: int | None = None, steps: list[dict] | None = None) -> dict:
+    """Create a DRAFT campaign (nothing is sent). channel: email | whatsapp. steps: [{name, delay_days or
+    delay_hours, subject, body, wa_template}]. A WhatsApp stage needs wa_template = the approved Twilio Content SID
+    (HX...) and puts its template values in body, separated by | (e.g. "{{first_name|there}} | {{company}}").
+    Omit steps for the default three email stages. Enroll people with enroll_in_campaign; starting it is
+    set_campaign_status."""
+    return await run(ctx, "write", actions.create_campaign, name, channel, description, daily_limit, steps)
 
 
 @server.tool(annotations=WRITE)
