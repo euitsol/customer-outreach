@@ -1,4 +1,5 @@
 """Rendering and delivery of a single stage email, plus the bookkeeping that goes with it."""
+import re
 import secrets
 from datetime import timedelta
 
@@ -36,7 +37,11 @@ def wa_values(session, enrollment, step, steps, message, campaign, s):
     """Template values for a WhatsApp stage: the (merged) body split on `|`. Twilio rejects empty values."""
     ctx = merge.context_for(enrollment, campaign.sender_name or s["sender_name"])
     _, raw = content_for(session, enrollment, step, steps, message)
-    return [merge.render(v, ctx).strip() or "-" for v in raw.split("|")] if raw.strip() else []
+    if not raw.strip():
+        return []
+    # Split on `|` only outside {{ }}, so a fallback like {{first_name|there}} stays in one piece.
+    parts = re.split(r"\|(?![^{}]*\}\})", raw)
+    return [merge.render(v, ctx).strip() or "-" for v in parts]
 
 
 def send_whatsapp_stage(session, enrollment, step, *, s, campaign=None, steps=None, message=None, now=None):
