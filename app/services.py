@@ -192,6 +192,8 @@ def enroll(session, campaign, person, email=None, variables=None, priority=None,
         address = normalize.phone(people_svc.whatsapp_number(person))
         if not address or not address.startswith("+"):
             raise EnrollError(f"{person.display_name} has no WhatsApp number in international format.")
+        if is_phone_suppressed(session, address):
+            raise EnrollError(f"{address} can't receive WhatsApp (marked invalid or on the do-not-contact list).")
     else:
         address = normalize.email(email) or person.email
     if not address:
