@@ -111,6 +111,8 @@ def stop_sequences(session, person, reason):
 
 
 STOP_WORDS = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+# Twilio codes meaning "this number can't receive WhatsApp": flag it so nothing is sent to it again
+PERMANENT_WA_CODES = {"63024", "63003", "21211", "21614"}
 
 
 def record_whatsapp_inbound(session, item):
@@ -148,6 +150,10 @@ def record_whatsapp_status(session, item):
     new = item.get("status")
     if new == "failed":
         m.status, m.error = "failed", item.get("error") or "Delivery failed"
+        if m.error.split(":")[0].strip() in PERMANENT_WA_CODES:
+            from app.services import flag_whatsapp_invalid
+            flag_whatsapp_invalid(session, people_svc.whatsapp_number(m.conversation.person),
+                                  f"WhatsApp: {m.error}"[:200])
     elif rank.get(new, -1) > rank.get(m.status, -1):
         m.status = new
     if new == "delivered":
@@ -296,6 +302,9 @@ def send(session, person, channel, body, *, subject=None, conversation=None, use
             raise SendBlocked("This person has no phone / WhatsApp number in international format.")
         if not template and not body:
             raise SendBlocked("Write a message first.")
+        from app.services import is_phone_suppressed
+        if is_phone_suppressed(session, number):
+            raise SendBlocked(f"{number} can't receive WhatsApp (marked invalid).")
         if not template and not whatsapp_window_open(conv, now):
             raise SendBlocked("More than 24 hours since this person last wrote on WhatsApp: "
                               "send an approved template message instead.")

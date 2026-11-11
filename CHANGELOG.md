@@ -8,6 +8,11 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **Undeliverable WhatsApp numbers are blocked automatically**: when Twilio reports that a number can't receive
+  WhatsApp (error 63024 / 63003 / 21211 / 21614) the number is added to the do-not-contact list, its campaign
+  enrollments are marked bounced and the person is tagged `whatsapp-invalid`; one-to-one sends to it are refused.
+  Hard-bounced emails now also get the tag `email-bounced`. Run
+  `docker compose exec web python -m app.manage flag-invalid-whatsapp` once to flag failures that already happened.
 - **Activity shows every sent message**: one-to-one emails and WhatsApp messages (Inbox replies, person page, API,
   Claude) now appear next to campaign events, with a *Source* filter and in the CSV export. The Outbox *Scheduled*
   tab shows today's sends vs the daily and per-mailbox limits and why anything is waiting.

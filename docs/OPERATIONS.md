@@ -74,6 +74,7 @@ Tests: `python -m pytest` (SQLite) or `TEST_DATABASE_URL=<empty postgres db> pyt
 
 ```bash
 docker compose exec web python -m app.manage status     # row counts + applied migrations
+docker compose exec web python -m app.manage flag-invalid-whatsapp   # block + tag numbers whose WhatsApp delivery failed (safe to re-run)
 ```
 Migrations are automatic and versioned (`schema_migrations`). Details and how to write one:
 [DATABASE.md](DATABASE.md#migrations).

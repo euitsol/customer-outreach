@@ -38,5 +38,5 @@ The banner above **Scheduled** shows today's sends against the daily limit, each
 
 Failures retry automatically a few times. After that, use **Retry**. The number of attempts and the pause between them are set in [Sending settings](/help/settings).
 
-* **WhatsApp campaigns** appear here too, marked *WhatsApp*, with the filter **Channel**. The *Sent from* column shows your WhatsApp number. A WhatsApp message that Twilio could not deliver (for example the number is not on WhatsApp) moves to **Failed** with the reason; it is not retried automatically, so retry or skip it yourself.
+* **WhatsApp campaigns** appear here too, marked *WhatsApp*, with the filter **Channel**. The *Sent from* column shows your WhatsApp number. A WhatsApp message that Twilio could not deliver (for example the number is not on WhatsApp) moves to **Failed** with the reason; it is not retried automatically. If the reason is that the number cannot receive WhatsApp (error 63024), the number is also blocked for all campaigns, the person is tagged `whatsapp-invalid` and the enrollment counts as bounced; remove the entry under [Do not contact](/help/suppression) and the tag if the number was corrected.
 * **Sent from** column (email): the mailbox each email goes out from (chosen for that email, the same as the person's earlier email, or the campaign's automatic rotation).

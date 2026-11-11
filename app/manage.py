@@ -7,6 +7,7 @@
     python -m app.manage seed seeds/ireland_hospitality_resend.csv --campaign "My campaign" [--replace] [--start]
     python -m app.manage create-user you@example.com --name "You" --role owner   (asks for the password)
     python -m app.manage create-api-key "Claude" [--scopes read,write,send]
+    python -m app.manage flag-invalid-whatsapp      # block + tag numbers whose WhatsApp delivery already failed
 
 Inside Docker:  docker compose exec web python -m app.manage <command>
 """
@@ -132,11 +133,29 @@ def cmd_create_api_key(session, args):
     return 0
 
 
+def cmd_flag_invalid_whatsapp(session, args):
+    """One-off: block + tag numbers whose WhatsApp messages already failed as undeliverable."""
+    from app.crm import conversations, people as people_svc
+    from app.services import flag_whatsapp_invalid
+    flagged = set()
+    failed = (session.query(ConversationMessage)
+              .filter(ConversationMessage.channel == "whatsapp", ConversationMessage.status == "failed"))
+    for m in failed:
+        if (m.error or "").split(":")[0].strip() in conversations.PERMANENT_WA_CODES:
+            number = people_svc.whatsapp_number(m.conversation.person)
+            if number and flag_whatsapp_invalid(session, number, f"WhatsApp: {m.error}"[:200]):
+                flagged.add(number)
+    session.commit()
+    print(f"Flagged {len(flagged)} number(s): {', '.join(sorted(flagged)) or '-'}")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m app.manage", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status", help="show row counts")
+    sub.add_parser("flag-invalid-whatsapp", help="block + tag numbers whose WhatsApp delivery already failed")
     r = sub.add_parser("reset", help="delete campaigns, contacts and history")
     r.add_argument("--yes", action="store_true", help="really delete (otherwise only show counts)")
     r.add_argument("--everything", action="store_true", help="also wipe do-not-contact list, templates and settings")
@@ -161,7 +180,8 @@ def main(argv=None):
     session = SessionLocal()
     try:
         return {"status": cmd_status, "reset": cmd_reset, "seed": cmd_seed, "create-user": cmd_create_user,
-                "create-api-key": cmd_create_api_key}[args.cmd](session, args) or 0
+                "create-api-key": cmd_create_api_key,
+                "flag-invalid-whatsapp": cmd_flag_invalid_whatsapp}[args.cmd](session, args) or 0
     finally:
         session.close()
 

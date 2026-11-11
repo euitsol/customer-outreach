@@ -107,6 +107,9 @@ later.
 - **Tasks / Deals / Campaigns**: what's open for this person; enroll them in a campaign from here.
 - **Emails, phones & profiles**: a person can have several addresses and numbers. ★ makes one primary.
   A bounced address is marked *bounced*.
+- **Bad numbers**: if Twilio says a number is not on WhatsApp, the number is blocked automatically, its campaign
+  enrollments show as bounced and the person gets the tag `whatsapp-invalid` (hard-bounced emails get `email-bounced`).
+  Remove the entry under *Do not contact* and the tag if the number was fixed.
 - **Consent**: email and WhatsApp permission. "Opt out" of email stops all their campaigns.
 
 **Lifecycle stage** describes the relationship (Subscriber → Lead → Marketing qualified → Sales

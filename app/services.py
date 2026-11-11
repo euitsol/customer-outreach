@@ -7,8 +7,8 @@ from sqlalchemy import and_, exists, func, literal, or_
 from app.clock import utcnow
 from app.crm import audit, normalize, people as people_svc
 from app.models import (
-    Campaign, CampaignStep, ClickLink, Consent, ConversationMessage, Enrollment, Event, Message, Person,
-    Suppression,
+    Campaign, CampaignStep, ClickLink, Consent, ContactPoint, ConversationMessage, Enrollment, Event, Message,
+    Person, Suppression,
 )
 
 EMAIL_RE = normalize.EMAIL_RE
@@ -82,6 +82,33 @@ def phone_not_suppressed():
 
 def is_phone_suppressed(session, number):
     return session.query(Suppression).filter_by(kind="phone", value=normalize.phone(number)).first() is not None
+
+
+def flag_whatsapp_invalid(session, number, reason):
+    """A number that can't receive WhatsApp (like a hard email bounce): block it for every campaign and
+    1:1 send, mark its enrollments bounced and tag the person `whatsapp-invalid`. Idempotent; no commit."""
+    number = normalize.phone(number)
+    if not number:
+        return False
+    add_suppression(session, number, reason)
+    people = {}
+    enrollments = (session.query(Enrollment).join(Campaign, Campaign.id == Enrollment.campaign_id)
+                   .filter(Campaign.channel == "whatsapp", Enrollment.email == number))
+    for e in enrollments:
+        people[e.person_id] = e.person
+        if not e.bounced:
+            e.bounced = True
+            session.add(Event(enrollment_id=e.id, stage=e.stage, type="bounced", detail=(reason or "")[:300]))
+    person = people_svc.find_by_phone(session, number)
+    if person is not None:
+        people[person.id] = person
+    for cp in session.query(ContactPoint).filter(ContactPoint.kind.in_(("phone", "whatsapp")),
+                                                 ContactPoint.value == number):
+        cp.status = "invalid"
+    for p in people.values():
+        people_svc.add_tags(session, p, "whatsapp-invalid")
+    session.flush()
+    return True
 
 
 def sendable():

@@ -142,6 +142,7 @@ def handle_message(session, msg, own_addrs):
                 hit = True
             for cp in session.query(ContactPoint).filter(ContactPoint.kind == "email", ContactPoint.value == addr):
                 cp.status = "bounced"
+                people_svc.add_tags(session, cp.person, "email-bounced")
                 hit = True
             if hit:
                 add_suppression(session, addr, "Hard bounce")

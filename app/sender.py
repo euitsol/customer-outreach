@@ -10,7 +10,7 @@ from app.crm import conversations, normalize
 from app.mailer import SendError
 from app.models import Event
 from app.services import (
-    add_suppression, content_for, get_or_create_message, recompute_enrollment, steps_of,
+    add_suppression, content_for, flag_whatsapp_invalid, get_or_create_message, recompute_enrollment, steps_of,
 )
 
 
@@ -73,6 +73,8 @@ def send_whatsapp_stage(session, enrollment, step, *, s, campaign=None, steps=No
             message.last_error = str(e)
             return "system", str(e)
         _fail(session, enrollment, message, str(e), s, now, permanent=e.permanent)
+        if str(e.code) in conversations.PERMANENT_WA_CODES:
+            flag_whatsapp_invalid(session, enrollment.email, str(e)[:200])
         return "failed", str(e)
 
     sent.sequence_message_id = message.id
