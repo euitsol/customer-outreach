@@ -7,6 +7,7 @@
     python -m app.manage seed seeds/ireland_hospitality_resend.csv --campaign "My campaign" [--replace] [--start]
     python -m app.manage create-user you@example.com --name "You" --role owner   (asks for the password)
     python -m app.manage create-api-key "Claude" [--scopes read,write,send]
+    python -m app.manage check-phones [--limit N]   # run the Twilio Lookup number check now
     python -m app.manage flag-invalid-whatsapp      # block + tag numbers whose WhatsApp delivery already failed
 
 Inside Docker:  docker compose exec web python -m app.manage <command>
@@ -150,11 +151,24 @@ def cmd_flag_invalid_whatsapp(session, args):
     return 0
 
 
+def cmd_check_phones(session, args):
+    """Run the number check now (the worker also runs it daily). --limit overrides the Settings limit."""
+    from app import phone_lookup
+    if not phone_lookup.credentials_ok():
+        print("Twilio is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN).")
+        return 1
+    checked, blocked = phone_lookup.run_daily(session, limit=args.limit)
+    print(f"Checked {checked} number(s), blocked {blocked}.")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m app.manage", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status", help="show row counts")
+    cp = sub.add_parser("check-phones", help="check new phone numbers with Twilio Lookup now")
+    cp.add_argument("--limit", type=int, default=None, help="how many numbers (default: the daily limit in Settings)")
     sub.add_parser("flag-invalid-whatsapp", help="block + tag numbers whose WhatsApp delivery already failed")
     r = sub.add_parser("reset", help="delete campaigns, contacts and history")
     r.add_argument("--yes", action="store_true", help="really delete (otherwise only show counts)")
@@ -181,7 +195,8 @@ def main(argv=None):
     try:
         return {"status": cmd_status, "reset": cmd_reset, "seed": cmd_seed, "create-user": cmd_create_user,
                 "create-api-key": cmd_create_api_key,
-                "flag-invalid-whatsapp": cmd_flag_invalid_whatsapp}[args.cmd](session, args) or 0
+                "flag-invalid-whatsapp": cmd_flag_invalid_whatsapp,
+                "check-phones": cmd_check_phones}[args.cmd](session, args) or 0
     finally:
         session.close()
 

@@ -133,6 +133,8 @@ def record_whatsapp_inbound(session, item):
                            external_id=item.get("id"), when=item.get("timestamp"),
                            meta={"type": item.get("type"), "context_id": item.get("context_id")})
     if new:
+        from app.services import set_whatsapp_status
+        set_whatsapp_status(session, person, "verified")
         people_svc.touch(person, item.get("timestamp"))
         stop_sequences(session, person, "Replied on WhatsApp")
         if (item.get("text") or "").strip().lower().rstrip(".!") in STOP_WORDS:
@@ -156,6 +158,9 @@ def record_whatsapp_status(session, item):
                                   f"WhatsApp: {m.error}"[:200])
     elif rank.get(new, -1) > rank.get(m.status, -1):
         m.status = new
+    if new in ("delivered", "read"):
+        from app.services import set_whatsapp_status
+        set_whatsapp_status(session, m.conversation.person, "verified")
     if new == "delivered":
         m.delivered_at = item.get("timestamp")
     if new == "read":

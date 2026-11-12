@@ -84,9 +84,27 @@ def is_phone_suppressed(session, number):
     return session.query(Suppression).filter_by(kind="phone", value=normalize.phone(number)).first() is not None
 
 
-def flag_whatsapp_invalid(session, number, reason):
+WA_STATUS_TAGS = {"verified": "whatsapp-verified", "pending": "whatsapp-pending",
+                  "invalid": "whatsapp-invalid", "none": "no-whatsapp"}
+
+
+def set_whatsapp_status(session, person, status):
+    """Give the person exactly one WhatsApp status tag: verified (messages delivered / they wrote to us),
+    pending (not confirmed yet), invalid (not a valid number) or none (no WhatsApp, e.g. a landline).
+    `verified` never overwrites a block. No commit."""
+    names = {t.name for t in person.tags}
+    if status == "verified" and names & {WA_STATUS_TAGS["invalid"], WA_STATUS_TAGS["none"]}:
+        return
+    if WA_STATUS_TAGS[status] in names and not names & (set(WA_STATUS_TAGS.values()) - {WA_STATUS_TAGS[status]}):
+        return
+    people_svc.remove_tags(session, person, ",".join(WA_STATUS_TAGS.values()))
+    people_svc.add_tags(session, person, WA_STATUS_TAGS[status])
+
+
+def flag_whatsapp_invalid(session, number, reason, status="invalid"):
     """A number that can't receive WhatsApp (like a hard email bounce): block it for every campaign and
-    1:1 send, mark its enrollments bounced and tag the person `whatsapp-invalid`. Idempotent; no commit."""
+    1:1 send, mark its enrollments bounced and tag the person `whatsapp-invalid` (status "none": `no-whatsapp`).
+    Idempotent; no commit."""
     number = normalize.phone(number)
     if not number:
         return False
@@ -106,7 +124,7 @@ def flag_whatsapp_invalid(session, number, reason):
                                                  ContactPoint.value == number):
         cp.status = "invalid"
     for p in people.values():
-        people_svc.add_tags(session, p, "whatsapp-invalid")
+        set_whatsapp_status(session, p, status)
     session.flush()
     return True
 

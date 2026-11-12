@@ -8,6 +8,7 @@ from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import aliased
 
 from app import config, mailboxes, settings as app_settings
+from app import phone_lookup
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.db import SessionLocal, init_db
@@ -198,6 +199,8 @@ def _loop(channel):
         interval = 60
         try:
             interval = app_settings.load(session)["poll_interval"]
+            if channel == WA:
+                phone_lookup.run_daily(session)
             run_cycle(session, channel)
         except Exception:
             session.rollback()

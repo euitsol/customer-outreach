@@ -114,6 +114,8 @@ def settings():
             "max_delay": _int("max_delay", s["max_delay"]),
             "daily_limit": _int("daily_limit", s["daily_limit"], 0, 100000),
             "poll_interval": _int("poll_interval", s["poll_interval"], 10, 3600),
+            "lookup_daily_limit": _int("lookup_daily_limit", s["lookup_daily_limit"], 0, 100000),
+            "lookup_paid": form_bool("lookup_paid"),
             "window_enabled": form_bool("window_enabled"),
             "window_start": request.form.get("window_start") or s["window_start"],
             "window_end": request.form.get("window_end") or s["window_end"],
@@ -138,7 +140,8 @@ def settings():
         return redirect(url_for("admin.settings"))
     from app.views.dashboard import service_health
     zones = sorted(z for z in available_timezones() if "/" in z and not z.startswith(("Etc/", "SystemV/", "US/")))
-    return render_template("settings.html", s=s, zones=zones, health=service_health(s), config=config,
+    from app import phone_lookup
+    return render_template("settings.html", s=s, lookup=phone_lookup.usage(sess, s), zones=zones, health=service_health(s), config=config,
                            boxes=sess.query(Mailbox).order_by(Mailbox.from_env.desc(), Mailbox.id).all(),
                            smtp_ok=mailboxes.ready(sess))
 

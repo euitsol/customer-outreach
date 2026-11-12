@@ -16,6 +16,8 @@ DEFAULTS = {
     "max_delay": config.MAX_DELAY_SECONDS,
     "daily_limit": config.MAX_PER_DAY,
     "poll_interval": config.CHECK_INTERVAL_SECONDS,
+    "lookup_daily_limit": config.TWILIO_LOOKUP_DAILY_LIMIT,   # Twilio Lookup number checks per day (0 = off)
+    "lookup_paid": config.TWILIO_LOOKUP_PAID,                 # also fetch line type (paid data package)
     "window_enabled": False,
     "window_start": "08:00",
     "window_end": "18:00",
@@ -33,9 +35,9 @@ DEFAULTS = {
     "footer_address": "",
 }
 
-INT_KEYS = {"min_delay", "max_delay", "daily_limit", "poll_interval", "retry_max", "retry_backoff"}
+INT_KEYS = {"min_delay", "max_delay", "daily_limit", "poll_interval", "lookup_daily_limit", "retry_max", "retry_backoff"}
 BOOL_KEYS = {"sending_paused", "window_enabled", "weekdays_only", "track_opens",
-             "track_clicks", "footer_enabled"}
+             "track_clicks", "footer_enabled", "lookup_paid"}
 
 
 def _cast(key, raw):

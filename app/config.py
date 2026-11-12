@@ -43,6 +43,9 @@ TWILIO_DAILY_LIMIT = int(os.environ.get("TWILIO_DAILY_LIMIT", 250))        # Wha
 TWILIO_COOLDOWN_DAYS = int(os.environ.get("TWILIO_COOLDOWN_DAYS", 7))        # days between messages from different WhatsApp campaigns (0 = off)
 TWILIO_MESSAGING_SERVICE_SID = os.environ.get("TWILIO_MESSAGING_SERVICE_SID", "")  # optional, instead of FROM
 
+TWILIO_LOOKUP_DAILY_LIMIT = int(os.environ.get("TWILIO_LOOKUP_DAILY_LIMIT", 50))  # Lookup v2 number checks per day (0 = off); editable in Settings
+TWILIO_LOOKUP_PAID = os.environ.get("TWILIO_LOOKUP_PAID", "0").lower() in ("1", "true", "yes")  # add line type intelligence (~$0.008 per lookup)
+
 # --- MCP server (Claude). The HTTP transport requires an API key created in Settings > API keys.
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.environ.get("MCP_PORT", 8092))
