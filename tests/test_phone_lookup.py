@@ -92,3 +92,33 @@ def test_verified_tag_never_overrides_a_block():
     set_whatsapp_status(s, q, "verified")
     assert {t.name for t in q.tags} == {"whatsapp-verified"}
     s.close()
+
+
+def test_backfill_from_past_results():
+    from app.crm import conversations
+    from app.models import ConversationMessage
+    s = SessionLocal()
+    rows = {}
+    for key, phone, status, error, direction in (
+            ("ok", "+353871115001", "delivered", None, "out"),
+            ("read", "+353871115002", "read", None, "out"),
+            ("bad", "+353871115003", "failed", "63024: Invalid message recipient", "out"),
+            ("flaky", "+353871115004", "failed", "30008: Unknown error", "out"),
+            ("wrote", "+353871115005", "received", None, "in")):
+        p, _ = people_svc.upsert(s, email=f"bf-{key}@example.com", phone=phone)
+        conv = conversations.get_or_create(s, p, "whatsapp")
+        s.add(ConversationMessage(conversation_id=conv.id, direction=direction, channel="whatsapp",
+                                  status=status, error=error))
+        rows[key] = p.email
+    people_svc.upsert(s, email="bf-untouched@example.com", phone="+353871115006")
+    s.commit()
+
+    phone_lookup.backfill(s)
+    s.commit()
+    assert _tags(s, rows["ok"]) == {"whatsapp-verified"} and _tags(s, rows["read"]) == {"whatsapp-verified"}
+    assert _tags(s, rows["wrote"]) == {"whatsapp-verified"}
+    assert _tags(s, rows["bad"]) == {"whatsapp-invalid"}
+    assert _tags(s, rows["flaky"]) == {"whatsapp-pending"}              # other failures prove nothing
+    assert _tags(s, "bf-untouched@example.com") == {"whatsapp-pending"}
+    assert s.query(ContactPoint).filter_by(value="+353871115001").one().verified_at is not None   # no Lookup spend
+    s.close()

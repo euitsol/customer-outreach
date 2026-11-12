@@ -82,6 +82,50 @@ def tag_pending(session):
     return len(people)
 
 
+def backfill(session):
+    """Tag existing numbers from what already happened: blocked where Twilio said the number can't receive
+    WhatsApp (inbox failures and failed campaign messages), verified where a message was delivered/read or
+    the person wrote to us, pending for the rest. Verified numbers skip Lookup. No commit.
+    Returns {"invalid": n, "verified": n, "pending": n}."""
+    from app.crm import conversations, people as people_svc
+    from app.models import ConversationMessage, Message
+    blocked, verified = {}, set()
+
+    def code_of(error):
+        text = (error or "").strip()
+        return (text[len("Twilio error "):] if text.startswith("Twilio error ") else text).split(":")[0].strip()
+
+    wa_msgs = (session.query(ConversationMessage).filter(ConversationMessage.channel == "whatsapp"))
+    for m in wa_msgs:
+        number = people_svc.whatsapp_number(m.conversation.person)
+        if not number:
+            continue
+        if m.status == "failed" and code_of(m.error) in conversations.PERMANENT_WA_CODES:
+            blocked[number] = f"WhatsApp: {m.error}"[:200]
+        elif m.direction == "in" or m.status in ("delivered", "read"):
+            verified.add(number)
+    failed = (session.query(Message, Enrollment).join(Enrollment, Enrollment.id == Message.enrollment_id)
+              .join(Campaign, Campaign.id == Enrollment.campaign_id)
+              .filter(Campaign.channel == "whatsapp", Message.status == "failed"))
+    for msg, e in failed:
+        if code_of(msg.last_error) in conversations.PERMANENT_WA_CODES:
+            blocked[e.email] = (msg.last_error or "")[:200]
+    for number, reason in blocked.items():
+        flag_whatsapp_invalid(session, number, reason)
+    done = 0
+    for number in verified - set(blocked):
+        person = people_svc.find_by_phone(session, number)
+        if person is None:
+            continue
+        set_whatsapp_status(session, person, "verified")
+        for cp in session.query(ContactPoint).filter(ContactPoint.kind.in_(("phone", "whatsapp")),
+                                                     ContactPoint.value == number, ContactPoint.verified_at.is_(None)):
+            cp.verified_at = utcnow()
+        done += 1
+    session.flush()
+    return {"invalid": len(blocked), "verified": done, "pending": tag_pending(session)}
+
+
 def _today(session, s, now):
     return app_settings.to_local(now, s).date().isoformat()
 

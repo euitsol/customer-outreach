@@ -12,7 +12,8 @@
   numbers in WhatsApp campaigns first. The limit and an optional paid line-type check (about $0.008 per number)
   are set under Settings > WhatsApp number check (`manage check-phones` runs it now). People get a status tag:
   `whatsapp-pending`, `whatsapp-verified` (a message was delivered or they wrote), `whatsapp-invalid` or
-  `no-whatsapp` (blocked). Filter by them in a campaign's enrollments.
+  `no-whatsapp` (blocked). Filter by them in a campaign's enrollments. `manage backfill-whatsapp-status`
+  tags existing numbers from past delivered / failed WhatsApp messages.
 - **Undeliverable WhatsApp numbers are blocked automatically**: when Twilio reports that a number can't receive
   WhatsApp (error 63024 / 63003 / 21211 / 21614) the number is added to the do-not-contact list, its campaign
   enrollments are marked bounced and the person is tagged `whatsapp-invalid`; one-to-one sends and new WhatsApp

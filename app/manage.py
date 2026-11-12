@@ -8,6 +8,7 @@
     python -m app.manage create-user you@example.com --name "You" --role owner   (asks for the password)
     python -m app.manage create-api-key "Claude" [--scopes read,write,send]
     python -m app.manage check-phones [--limit N]   # run the Twilio Lookup number check now
+    python -m app.manage backfill-whatsapp-status [--dry-run]   # tag numbers from past WhatsApp results
     python -m app.manage flag-invalid-whatsapp      # block + tag numbers whose WhatsApp delivery already failed
 
 Inside Docker:  docker compose exec web python -m app.manage <command>
@@ -162,6 +163,19 @@ def cmd_check_phones(session, args):
     return 0
 
 
+def cmd_backfill_whatsapp_status(session, args):
+    """Tag every number from past WhatsApp activity: blocked / verified / pending. --dry-run only reports."""
+    from app import phone_lookup
+    result = phone_lookup.backfill(session)
+    if args.dry_run:
+        session.rollback()
+    else:
+        session.commit()
+    print(f"{'Would tag' if args.dry_run else 'Tagged'}: {result['invalid']} blocked, "
+          f"{result['verified']} verified, {result['pending']} pending.")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m app.manage", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -169,6 +183,8 @@ def main(argv=None):
     sub.add_parser("status", help="show row counts")
     cp = sub.add_parser("check-phones", help="check new phone numbers with Twilio Lookup now")
     cp.add_argument("--limit", type=int, default=None, help="how many numbers (default: the daily limit in Settings)")
+    bf = sub.add_parser("backfill-whatsapp-status", help="tag numbers from past WhatsApp delivery results")
+    bf.add_argument("--dry-run", action="store_true", help="show the counts without saving")
     sub.add_parser("flag-invalid-whatsapp", help="block + tag numbers whose WhatsApp delivery already failed")
     r = sub.add_parser("reset", help="delete campaigns, contacts and history")
     r.add_argument("--yes", action="store_true", help="really delete (otherwise only show counts)")
@@ -196,7 +212,8 @@ def main(argv=None):
         return {"status": cmd_status, "reset": cmd_reset, "seed": cmd_seed, "create-user": cmd_create_user,
                 "create-api-key": cmd_create_api_key,
                 "flag-invalid-whatsapp": cmd_flag_invalid_whatsapp,
-                "check-phones": cmd_check_phones}[args.cmd](session, args) or 0
+                "check-phones": cmd_check_phones,
+                "backfill-whatsapp-status": cmd_backfill_whatsapp_status}[args.cmd](session, args) or 0
     finally:
         session.close()
 
