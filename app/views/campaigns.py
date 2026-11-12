@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
 from app import mailboxes, merge, settings as app_settings
+from app.crm import audit
 from app.channels import whatsapp
 from app.mailer import SendError
 from app.models import (
@@ -14,7 +15,7 @@ from app.services import (
     cancel_queued, create_default_steps, delete_campaign, duplicate_campaign, queue_next,
     recompute_campaign, renumber_steps, retry_failed, set_campaign_status, steps_of,
 )
-from app.views.common import back, db, err, form_bool, get_or_404, int_arg, ok, settings_now, warn
+from app.views.common import actor, back, db, err, form_bool, get_or_404, int_arg, ok, settings_now, warn
 
 bp = Blueprint("campaigns", __name__)
 
@@ -177,6 +178,28 @@ def set_status(cid):
     else:
         abort(400)
     sess.commit()
+    return back("campaigns.overview", cid=cid)
+
+
+@bp.route("/campaigns/<int:cid>/verify-whatsapp", methods=["POST"])
+def verify_whatsapp(cid):
+    """Queue this campaign's still-pending numbers for a Twilio Lookup check (the worker does them)."""
+    from app import phone_lookup
+    sess = db()
+    get_or_404(Campaign, cid)
+    if not phone_lookup.credentials_ok():
+        err("Twilio is not configured, so numbers can't be checked.")
+        return back("campaigns.overview", cid=cid)
+    ids = [pid for (pid,) in sess.query(Enrollment.person_id).filter(Enrollment.campaign_id == cid)]
+    numbers = phone_lookup.pending_numbers(sess, ids) if ids else []
+    if not numbers:
+        warn("Nothing to check: every number in this campaign is already checked, verified or blocked.")
+    else:
+        n = phone_lookup.enqueue(sess, numbers)
+        audit.record(sess, actor(), "whatsapp_check_queued", "campaign", cid, {"numbers": len(numbers), "new": n})
+        sess.commit()
+        ok(f"{len(numbers)} pending number(s) queued for checking. The worker does them within a minute or two; "
+           "progress is in Settings > Audit log (action whatsapp_check).")
     return back("campaigns.overview", cid=cid)
 
 

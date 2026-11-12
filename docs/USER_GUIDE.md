@@ -108,7 +108,7 @@ later.
 - **Emails, phones & profiles**: a person can have several addresses and numbers. ★ makes one primary.
   A bounced address is marked *bounced*.
 - **Bad numbers**: if Twilio says a number is not on WhatsApp, the number is blocked automatically, its campaign
-  enrollments show as bounced and the person gets the tag `whatsapp-invalid` (hard-bounced emails get `email-bounced`). Each day the CRM also checks new numbers with Twilio Lookup (amount and an optional paid line-type check under Settings > WhatsApp number check) and tags people `whatsapp-pending`, `whatsapp-verified`, `whatsapp-invalid` or `no-whatsapp`; the last two are blocked. Use the Tag filter in a campaign's enrollments to see each group.
+  enrollments show as bounced and the person gets the tag `whatsapp-invalid` (hard-bounced emails get `email-bounced`). Each day the CRM also checks new numbers with Twilio Lookup (amount and an optional paid line-type check under Settings > WhatsApp number check) and tags people `whatsapp-pending`, `whatsapp-verified`, `whatsapp-invalid` or `no-whatsapp`; the last two are blocked. Use the Tag filter in a campaign's enrollments to see each group. The person page has a **Verify WhatsApp number** button and WhatsApp campaigns a **Verify pending numbers** button; both only touch pending numbers, and every check is recorded in the audit log (action `whatsapp_check`).
   Remove the entry under *Do not contact* and the tag if the number was fixed.
 - **Consent**: email and WhatsApp permission. "Opt out" of email stops all their campaigns.
 

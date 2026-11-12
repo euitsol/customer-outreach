@@ -39,3 +39,4 @@ On a person, **Merge** shows likely duplicates (same email domain, last name, ph
 
 * To add many people at once, use [Import](/help/import).
 * Labels for grouping people are managed under [Tags](/help/tags).
+* **Verify WhatsApp number** (header button, shown while the number is still pending): checks it with Twilio Lookup now and logs the result in the Audit log. Verified or blocked people are never re-checked.

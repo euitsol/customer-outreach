@@ -26,3 +26,4 @@ How fast, when and as whom the CRM sends campaign email.
 * The sender display name is shown next to the address of whichever mailbox sends. A campaign can set its own name.
 * New mailboxes should stay low (20-50 a day) and ramp up. A low daily limit and random delays protect your reputation.
 * A one-click `List-Unsubscribe` header is always added. Unsubscribes land in [Do not contact](/help/suppression).
+* **WhatsApp number check**: how many new numbers Twilio Lookup checks per day (0 = off) and an optional paid line-type check (about $0.008 per number) that also blocks landlines. Every check is written to the [Audit log](/help/audit) (action `whatsapp_check`). Lookup cannot tell whether a number is on WhatsApp; people stay `whatsapp-pending` until a message is delivered or they write to you (`whatsapp-verified`). Blocked numbers are tagged `whatsapp-invalid` or `no-whatsapp`.

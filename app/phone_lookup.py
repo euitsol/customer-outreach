@@ -9,11 +9,14 @@ Outcome per number (same machinery as a failed WhatsApp send, `services.flag_wha
   landline / toll-free / ...    -> blocked, tag `no-whatsapp` (paid check only)
   anything else                 -> `verified_at` set (never checked again), tag stays `whatsapp-pending`
 """
+import json
+
 import httpx
 from sqlalchemy import case, exists
 
 from app import config, settings as app_settings
 from app.clock import utcnow
+from app.crm import audit
 from app.models import Campaign, ContactPoint, Enrollment, Person, Tag, person_tags
 from app.services import WA_STATUS_TAGS, flag_whatsapp_invalid, set_whatsapp_status
 
@@ -50,18 +53,37 @@ def lookup(number, client, paid=False):
     return bool(body.get("valid")), (lti.get("type") if paid else None)
 
 
-def _unchecked(session):
-    return (session.query(ContactPoint).filter(ContactPoint.kind.in_(("phone", "whatsapp")),
-                                               ContactPoint.status == "active", ContactPoint.verified_at.is_(None)))
+def _has_tag(*names):
+    return exists().where(person_tags.c.person_id == ContactPoint.person_id).where(
+        person_tags.c.tag_id == Tag.id).where(Tag.name.in_(names))
+
+
+def _unchecked(session, person_ids=None):
+    """Active numbers never looked up, of people not already verified or blocked (the "pending" ones)."""
+    q = (session.query(ContactPoint).filter(
+        ContactPoint.kind.in_(("phone", "whatsapp")), ContactPoint.status == "active",
+        ContactPoint.verified_at.is_(None),
+        ~_has_tag(WA_STATUS_TAGS["verified"], WA_STATUS_TAGS["invalid"], WA_STATUS_TAGS["none"])))
+    if person_ids is not None:
+        q = q.filter(ContactPoint.person_id.in_(person_ids))
+    return q
+
+
+def pending_numbers(session, person_ids=None):
+    """Distinct international-format numbers a check would still look up."""
+    out = []
+    for cp in _unchecked(session, person_ids).order_by(ContactPoint.id):
+        if cp.value.startswith("+") and cp.value not in out:
+            out.append(cp.value)
+    return out
 
 
 def _candidates(session, limit):
-    """Unchecked, still-active numbers; those in a WhatsApp campaign first."""
+    """Pending numbers for the daily run; those in a WhatsApp campaign first."""
     in_wa = exists().where(Enrollment.email == ContactPoint.value).where(
         Enrollment.campaign_id == Campaign.id).where(Campaign.channel == "whatsapp")
-    rows = _unchecked(session).order_by(case((in_wa, 0), else_=1), ContactPoint.id).all()
     seen = []
-    for cp in rows:
+    for cp in _unchecked(session).order_by(case((in_wa, 0), else_=1), ContactPoint.id):
         if cp.value.startswith("+") and cp.value not in seen:
             seen.append(cp.value)
         if len(seen) >= limit:
@@ -141,10 +163,51 @@ def usage(session, s=None, now=None):
     return dict(done=done, limit=s["lookup_daily_limit"], waiting=waiting, paid=s["lookup_paid"],
                 paid_total=paid_total, spend_total=round(paid_total * PAID_COST_USD, 2),
                 spend_max_today=round(s["lookup_daily_limit"] * PAID_COST_USD, 2) if s["lookup_paid"] else 0,
-                configured=credentials_ok())
+                queued=queue_size(session), configured=credentials_ok())
 
 
-def run_daily(session, client=None, now=None, limit=None):
+def check_numbers(session, numbers, client, paid, actor, source, now):
+    """Look up each number, apply the outcome and write one audit row + log line per number (visible under
+    Settings > Audit log, action `whatsapp_check`). Stops at the first Twilio failure. No commit.
+    Returns (checked, blocked)."""
+    from app.crm import people as people_svc
+    checked = blocked = 0
+    for number in numbers:
+        try:
+            valid, line_type = lookup(number, client, paid=paid)
+        except LookupUnavailable as e:
+            print(f"phone lookup stopped: {e}", flush=True)
+            audit.record(session, actor, "whatsapp_check_stopped", "phone", number, {"reason": str(e), "source": source})
+            break
+        checked += 1
+        is_block = True
+        if not valid:
+            outcome = "invalid number: blocked"
+            flag_whatsapp_invalid(session, number, "Twilio Lookup: not a valid phone number")
+        elif line_type in NO_WHATSAPP_TYPES:
+            outcome = f"{line_type} line: blocked (no WhatsApp)"
+            flag_whatsapp_invalid(session, number, f"Twilio Lookup: {line_type} line, can't use WhatsApp",
+                                  status="none")
+        else:
+            is_block = False
+            outcome = "valid" + (f" ({line_type})" if line_type else "") + ": still pending until a message is delivered"
+            for cp in session.query(ContactPoint).filter(ContactPoint.kind.in_(("phone", "whatsapp")),
+                                                         ContactPoint.value == number):
+                cp.verified_at = now
+        blocked += is_block
+        person = people_svc.find_by_phone(session, number)
+        audit.record(session, actor, "whatsapp_check", "person" if person else "phone",
+                     person.id if person else number,
+                     {"number": number, "result": outcome, "source": source, "paid_check": paid})
+        print(f"phone lookup [{source}] {number}: {outcome}", flush=True)
+        session.flush()
+    if paid and checked:
+        app_settings.put(session, "lookup_paid_total",
+                         int(app_settings.get_raw(session, "lookup_paid_total", 0) or 0) + checked)
+    return checked, blocked
+
+
+def run_daily(session, client=None, now=None, limit=None, actor=None, source="daily"):
     """Check up to the daily limit of new numbers (`limit` overrides it for a manual run). Commits.
     Returns (checked, blocked)."""
     s = app_settings.load(session)
@@ -152,7 +215,6 @@ def run_daily(session, client=None, now=None, limit=None):
     if not credentials_ok() or cap <= 0:
         return 0, 0
     now = now or utcnow()
-    paid = s["lookup_paid"]
     tag_pending(session)
     today = _today(session, s, now)
     done = int(app_settings.get_raw(session, "lookup_count", 0) or 0) \
@@ -165,33 +227,63 @@ def run_daily(session, client=None, now=None, limit=None):
     client = client or httpx.Client(timeout=15)
     checked = blocked = 0
     try:
-        for number in todo:
-            try:
-                valid, line_type = lookup(number, client, paid=paid)
-            except LookupUnavailable as e:
-                print(f"phone lookup stopped: {e}", flush=True)
-                break
-            checked += 1
-            if not valid:
-                blocked += 1
-                flag_whatsapp_invalid(session, number, "Twilio Lookup: not a valid phone number")
-            elif line_type in NO_WHATSAPP_TYPES:
-                blocked += 1
-                flag_whatsapp_invalid(session, number, f"Twilio Lookup: {line_type} line, can't use WhatsApp",
-                                      status="none")
-            else:
-                for cp in session.query(ContactPoint).filter(ContactPoint.kind.in_(("phone", "whatsapp")),
-                                                             ContactPoint.value == number):
-                    cp.verified_at = now
+        checked, blocked = check_numbers(session, todo, client, s["lookup_paid"], actor or audit.Actor(
+            "system", label="whatsapp number check"), source, now)
     finally:
         if own:
             client.close()
         app_settings.put(session, "lookup_day", today)
         app_settings.put(session, "lookup_count", done + checked)
-        if paid:
-            app_settings.put(session, "lookup_paid_total",
-                             int(app_settings.get_raw(session, "lookup_paid_total", 0) or 0) + checked)
         session.commit()
     if checked:
         print(f"phone lookup: {checked} checked, {blocked} blocked", flush=True)
+    return checked, blocked
+
+
+# ---- numbers queued by a "verify" click, worked off by the worker (not counted in the daily allowance)
+
+QUEUE_KEY = "lookup_queue"
+QUEUE_BATCH = 100
+
+
+def queue_size(session):
+    try:
+        return len(json.loads(app_settings.get_raw(session, QUEUE_KEY, "[]") or "[]"))
+    except ValueError:
+        return 0
+
+
+def enqueue(session, numbers):
+    """Add numbers to the queue (no duplicates). Returns how many were new. No commit."""
+    try:
+        queued = json.loads(app_settings.get_raw(session, QUEUE_KEY, "[]") or "[]")
+    except ValueError:
+        queued = []
+    new = [n for n in numbers if n not in queued]
+    app_settings.put(session, QUEUE_KEY, json.dumps(queued + new))
+    return len(new)
+
+
+def run_queue(session, client=None, now=None, actor=None):
+    """Check up to QUEUE_BATCH queued numbers that are still pending. Commits. Returns (checked, blocked)."""
+    if not credentials_ok() or not queue_size(session):
+        return 0, 0
+    queued = json.loads(app_settings.get_raw(session, QUEUE_KEY, "[]"))
+    batch, rest = queued[:QUEUE_BATCH], queued[QUEUE_BATCH:]
+    still_pending = set(pending_numbers(session))
+    todo = [n for n in batch if n in still_pending]
+    own = client is None
+    client = client or httpx.Client(timeout=15)
+    checked = blocked = 0
+    try:
+        checked, blocked = check_numbers(session, todo, client, app_settings.load(session)["lookup_paid"],
+                                         actor or audit.Actor("system", label="whatsapp number check"),
+                                         "queued", now or utcnow())
+        if checked < len(todo):                       # Twilio failed midway: keep the unchecked ones for next time
+            rest = todo[checked:] + rest
+    finally:
+        if own:
+            client.close()
+        app_settings.put(session, QUEUE_KEY, json.dumps(rest))
+        session.commit()
     return checked, blocked

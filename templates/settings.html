@@ -34,6 +34,8 @@
         {% if not lookup.configured %}Twilio is not configured, so nothing is checked.
         {% else %}Today: <b>{{ lookup.done }}</b> of {{ lookup.limit }} checked; <b>{{ lookup.waiting }}</b> number(s) still waiting.
         {% if lookup.paid %}Worst case today about ${{ '%.2f'|format(lookup.spend_max_today) }}; {{ lookup.paid_total }} paid lookups so far (about ${{ '%.2f'|format(lookup.spend_total) }}).{% endif %}{% endif %}
+        {% if lookup.queued %}<b>{{ lookup.queued }}</b> number(s) queued from a Verify button.{% endif %}
+        Every check is logged: <a href="{{ url_for('workspace.audit_log', action='whatsapp_check') }}">see the check log</a> (or <code>docker compose logs -f worker</code>).<br>
         Tags: <code>whatsapp-pending</code> (not confirmed yet), <code>whatsapp-verified</code> (a message was delivered or they wrote to you), <code>whatsapp-invalid</code> / <code>no-whatsapp</code> (blocked). Filter by them under Enrollments &gt; Tag. Twilio cannot tell whether a number is on WhatsApp; only a real send confirms it.
       </div>
     </div>

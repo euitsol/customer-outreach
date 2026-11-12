@@ -13,6 +13,9 @@
     {% else %}
       <form method="post" action="{{ url_for('campaigns.set_status', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="start"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn btn-good" data-confirm="Start sending? The worker will begin emailing every ready person in this campaign, paced by your Settings.">{{ icon('play') }} {{ 'Resume' if c.status == 'paused' else 'Start campaign' }}</button></form>
     {% endif %}
+    {% if c.channel == 'whatsapp' %}
+    <form method="post" action="{{ url_for('campaigns.verify_whatsapp', cid=c.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="next" value="{{ request.path }}"><button class="btn" data-confirm="Check every still-pending number in this campaign with Twilio Lookup? Verified and blocked people are skipped. With the paid line-type check on, each number costs about $0.008.">{{ icon('check') }} Verify pending numbers</button></form>
+    {% endif %}
     <a class="btn" href="{{ url_for('imports.upload', campaign=c.id) }}">{{ icon('upload') }} Import</a>
     <a class="btn" href="{{ url_for('enrollments.new', campaign=c.id) }}">{{ icon('plus') }} Enroll someone</a>
   </div>

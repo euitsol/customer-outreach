@@ -42,3 +42,4 @@
 * ক্যাম্পেইনের অবস্থা: draft, active, paused, archived। শুরু, বিরতি ও archive আসল মানুষের কাছে পৌঁছায়, তাই API key দিয়ে এগুলো করতে `send` অনুমতি লাগে ([API keys & Claude](/help/api-keys))।
 * নির্ধারিত ও ব্যর্থ ইমেইল [Outbox](/help/outbox)-এ এবং সব ঘটনা [Email activity](/help/activity)-তে দেখুন।
 * সার্বিক সীমা ও send window [Sending settings](/help/settings)-এ।
+* **Verify pending numbers** (WhatsApp ক্যাম্পেইন, হেডার বোতাম): ক্যাম্পেইনের সব pending নম্বর Twilio Lookup যাচাইয়ের জন্য সারিতে দেয়; worker একে একে করে। যাচাইকৃত ও ব্লক হওয়া ব্যক্তি বাদ যায়, তাই শুধু pending নম্বরে প্রভাব পড়ে (পেইড যাচাই চালু থাকলে খরচও শুধু তাদের)।

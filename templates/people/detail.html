@@ -22,6 +22,7 @@
     </div>
   </div>
   <div class="page-actions">
+    {% if can_verify %}<form method="post" action="{{ url_for('people.verify_whatsapp', person_id=p.id) }}">{{ csrf_field() }}<button class="btn" title="Check this number with Twilio Lookup">{{ icon('check') }} Verify WhatsApp number</button></form>{% endif %}
     <a class="btn" href="{{ url_for('deals.new', person_id=p.id) }}">{{ icon('deal') }} New deal</a>
     <a class="btn" href="{{ url_for('people.merge', person_id=p.id) }}">{{ icon('merge') }} Merge</a>
     <form method="post" action="{{ url_for('people.delete', person_id=p.id) }}">{{ csrf_field() }}<button class="btn btn-danger" data-confirm="Delete {{ p.display_name }} with their campaign history, notes, tasks and conversations?">{{ icon('trash') }}</button></form>

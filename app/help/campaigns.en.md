@@ -42,3 +42,4 @@ Open a person's enrollment ([Enrollments](/help/enrollments)) to change a stage'
 * Campaign statuses: draft, active, paused, archived. Starting, pausing and archiving reach real people, so an API key needs the `send` permission to do them ([API keys & Claude](/help/api-keys)).
 * Check scheduled and failed emails in the [Outbox](/help/outbox) and all events in [Email activity](/help/activity).
 * Global limits and the send window are in [Sending settings](/help/settings).
+* **Verify pending numbers** (WhatsApp campaigns, header button): queues every still-pending number in the campaign for a Twilio Lookup check; the worker works through them. Verified and blocked people are skipped, so only pending numbers are affected (and billed, when the paid line-type check is on).

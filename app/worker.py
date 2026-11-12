@@ -200,6 +200,7 @@ def _loop(channel):
         try:
             interval = app_settings.load(session)["poll_interval"]
             if channel == WA:
+                phone_lookup.run_queue(session)
                 phone_lookup.run_daily(session)
             run_cycle(session, channel)
         except Exception:

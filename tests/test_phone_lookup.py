@@ -122,3 +122,73 @@ def test_backfill_from_past_results():
     assert _tags(s, "bf-untouched@example.com") == {"whatsapp-pending"}
     assert s.query(ContactPoint).filter_by(value="+353871115001").one().verified_at is not None   # no Lookup spend
     s.close()
+
+
+def _login_client():
+    import re
+    from app.web import app
+    app.config["TESTING"] = True
+    c = app.test_client()
+    assert c.post("/login", data={"username": "admin", "password": "secret"}).status_code == 302
+    token = re.search(r'name="csrf" content="([^"]+)"', c.get("/people").get_data(as_text=True)).group(1)
+    return c, token
+
+
+def _patch_twilio(monkeypatch, types=None):
+    real = httpx.Client
+    seen = []
+    monkeypatch.setattr(config, "TWILIO_ACCOUNT_SID", "ACtest")
+    monkeypatch.setattr(config, "TWILIO_AUTH_TOKEN", "tok")
+    mock = _client(types or {}, seen)
+    monkeypatch.setattr(httpx, "Client", lambda **kw: real(transport=mock._transport, **kw))
+    return seen
+
+
+def test_verify_button_on_person_page_logs_and_skips_verified(monkeypatch):
+    from app.models import AuditLog
+    seen = _patch_twilio(monkeypatch, {"6002": "invalid"})
+    s = SessionLocal()
+    good, _ = people_svc.upsert(s, email="vb-good@example.com", phone="+353871116001")
+    bad, _ = people_svc.upsert(s, email="vb-bad@example.com", phone="+353871116002")
+    done, _ = people_svc.upsert(s, email="vb-done@example.com", phone="+353871116003")
+    set_whatsapp_status(s, done, "verified")
+    s.commit()
+    ids = (good.id, bad.id, done.id)
+    c, token = _login_client()
+    assert b"Verify WhatsApp number" in c.get(f"/people/{ids[0]}").data
+    assert b"Verify WhatsApp number" not in c.get(f"/people/{ids[2]}").data      # already verified: no button
+    for pid in ids:
+        assert c.post(f"/people/{pid}/verify-whatsapp", data={"csrf_token": token}).status_code == 302
+    assert [n for n, _ in seen] == ["+353871116001", "+353871116002"]            # verified person never looked up
+    s2 = SessionLocal()
+    assert "whatsapp-invalid" in _tags(s2, "vb-bad@example.com")
+    rows = s2.query(AuditLog).filter_by(action="whatsapp_check").order_by(AuditLog.id.desc()).limit(2).all()
+    assert {r.changes["source"] for r in rows} == {"person page"} and {r.entity_id for r in rows} == {str(ids[0]), str(ids[1])}
+    s2.close()
+    s.close()
+
+
+def test_verify_campaign_queues_then_worker_checks_pending_only(monkeypatch):
+    from app.crm import audit
+    from app.models import Campaign
+    from app.services import enroll
+    seen = _patch_twilio(monkeypatch)
+    s = SessionLocal()
+    camp = Campaign(name="Verify me", channel="whatsapp", status="draft", is_active=False)
+    s.add(camp)
+    s.flush()
+    pending, _ = people_svc.upsert(s, email="vc-pending@example.com", phone="+353871117001")
+    verified, _ = people_svc.upsert(s, email="vc-verified@example.com", phone="+353871117002")
+    set_whatsapp_status(s, verified, "verified")
+    for p in (pending, verified):
+        enroll(s, camp, p, actor=audit.SYSTEM)
+    s.commit()
+    cid = camp.id
+    c, token = _login_client()
+    assert b"Verify pending numbers" in c.get(f"/campaigns/{cid}").data
+    assert c.post(f"/campaigns/{cid}/verify-whatsapp", data={"csrf_token": token}).status_code == 302
+    assert seen == []                                                          # queued, not run inside the request
+    assert phone_lookup.queue_size(s) == 1
+    assert phone_lookup.run_queue(s) == (1, 0)
+    assert [n for n, _ in seen] == ["+353871117001"] and phone_lookup.queue_size(s) == 0
+    s.close()

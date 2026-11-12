@@ -8,7 +8,7 @@ from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.orm import selectinload
 from werkzeug.datastructures import MultiDict
 
-from app import mailboxes, mailer
+from app import mailboxes, mailer, phone_lookup
 from app.channels import whatsapp
 from app.clock import utcnow
 from app.crm import (
@@ -271,7 +271,8 @@ def detail(person_id):
         mailboxes=mailboxes.usable(sess),
         wa_templates=sess.query(Template).filter(Template.channel == "whatsapp").order_by(Template.name).all(),
         email_templates=sess.query(Template).filter(Template.channel == "email").order_by(Template.name).all(),
-        tags=", ".join(t.name for t in p.tags), **_choices(sess))
+        tags=", ".join(t.name for t in p.tags), can_verify=bool(phone_lookup.pending_numbers(sess, [p.id])),
+        **_choices(sess))
 
 
 @bp.route("/people/<int:person_id>/edit", methods=["POST"])
@@ -378,6 +379,34 @@ def log_activity(person_id):
         sess.rollback()
         err(str(e))
     return redirect(url_for("people.detail", person_id=person_id) + "#timeline")
+
+
+@bp.route("/people/<int:person_id>/verify-whatsapp", methods=["POST"])
+def verify_whatsapp(person_id):
+    """Check this person's still-pending numbers with Twilio Lookup now (verified / blocked people are untouched)."""
+    import httpx
+    from app import settings as app_settings
+    sess = db()
+    p = get_or_404(Person, person_id)
+    if not phone_lookup.credentials_ok():
+        err("Twilio is not configured, so numbers can't be checked.")
+        return redirect(url_for("people.detail", person_id=person_id))
+    numbers = phone_lookup.pending_numbers(sess, [p.id])
+    if not numbers:
+        warn("Nothing to check: this person's numbers are already checked, verified or blocked.")
+        return redirect(url_for("people.detail", person_id=person_id))
+    with httpx.Client(timeout=15) as client:
+        checked, blocked = phone_lookup.check_numbers(sess, numbers, client, app_settings.load(sess)["lookup_paid"],
+                                                      actor(), "person page", utcnow())
+    sess.commit()
+    sess.refresh(p)
+    if checked < len(numbers):
+        err("Twilio could not be reached for every number; try again in a moment.")
+    elif blocked:
+        warn("Checked: this number can't receive WhatsApp and is now blocked.")
+    else:
+        ok("Checked: the number is valid. It stays pending until a WhatsApp message to it is delivered.")
+    return redirect(url_for("people.detail", person_id=person_id))
 
 
 @bp.route("/people/<int:person_id>/enroll", methods=["POST"])
