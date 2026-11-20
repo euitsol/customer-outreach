@@ -103,3 +103,129 @@ def test_http_transport_requires_a_key(keys):
         payload = next(line[5:] for line in r.text.splitlines() if line.startswith("data:"))
         result = json.loads(json.loads(payload)["result"]["content"][0]["text"])
         assert result["companies"][0]["name"] == "Harbour Hotel"
+
+
+# ---------------------------------------------------------------------- WhatsApp templates (Twilio Content API)
+
+class FakeContent:
+    """Stands in for content.twilio.com: one approved and one unsubmitted template."""
+    def __init__(self):
+        self.calls = []
+        self.items = [
+            {"sid": "HXaaa", "friendly_name": "approved_one", "language": "en", "date_created": "2026-11-17",
+             "variables": {}, "types": {"twilio/text": {"body": "Hello there"}},
+             "approval_requests": {"status": "approved", "category": "MARKETING", "name": "approved_one"}},
+            {"sid": "HXbbb", "friendly_name": "draft_one", "language": "en", "date_created": "2026-11-18",
+             "variables": {"1": "Anna"}, "types": {"twilio/text": {"body": "Hi {{1}}, thanks"}}},
+        ]
+
+    def request(self, method, url, json=None, auth=None):
+        import httpx
+        self.calls.append((method, url, json))
+        if method == "GET":
+            return httpx.Response(200, json={"contents": self.items, "meta": {"next_page_url": None}})
+        if url.endswith("/Content"):
+            return httpx.Response(201, json={"sid": "HXnew"})
+        return httpx.Response(201, json={"status": "received", "category": json["category"], "name": json["name"]})
+
+
+@pytest.fixture
+def twilio(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "TWILIO_ACCOUNT_SID", "ACtest")
+    monkeypatch.setattr(config, "TWILIO_AUTH_TOKEN", "tok")
+    fake = FakeContent()
+    monkeypatch.setattr("app.channels.whatsapp.httpx.Client", lambda **kw: _Ctx(fake))
+    return fake
+
+
+class _Ctx:
+    def __init__(self, fake): self.fake = fake
+    def __enter__(self): return self.fake
+    def __exit__(self, *a): return False
+
+
+def test_whatsapp_template_tools(keys, twilio, monkeypatch):
+    sess = SessionLocal()
+    sk, _ = apikeys.create(sess, "claude send", ["read", "write", "send"])
+    sess.commit()
+    sess.close()
+    allt = call("list_whatsapp_templates", {}, keys["ro"], monkeypatch)
+    assert [t["name"] for t in allt["templates"]] == ["draft_one", "approved_one"]      # newest first
+    assert allt["templates"][0]["status"] == "unsubmitted"
+    ok = call("list_whatsapp_templates", {"status": "approved"}, keys["ro"], monkeypatch)
+    assert [t["sid"] for t in ok["templates"]] == ["HXaaa"] and ok["templates"][0]["body"] == "Hello there"
+
+    new = call("create_whatsapp_template", {"name": "quote_chaser", "body": "Hi {{1}}, did you get our quote?",
+                                            "variable_examples": ["Anna"]}, keys["rw"], monkeypatch)
+    assert new["sid"] == "HXnew" and new["status"] == "unsubmitted"
+    method, url, payload = [c for c in twilio.calls if c[0] == "POST"][0]
+    assert payload["types"] == {"twilio/text": {"body": "Hi {{1}}, did you get our quote?"}}
+    assert payload["variables"] == {"1": "Anna"}
+    s = SessionLocal()
+    assert s.query(AuditLog).filter_by(entity_type="whatsapp_template", entity_id="HXnew").count() == 1
+    s.close()
+
+    for bad, msg in [({"name": "Bad Name", "body": "x"}, "lowercase"),
+                     ({"name": "ok_name", "body": "Hi {{1}}", "variable_examples": ["A"]}, "starts or ends"),
+                     ({"name": "ok_name", "body": "a {{2}} b", "variable_examples": ["A"]}, "no gaps"),
+                     ({"name": "ok_name", "body": "a {{1}} b"}, "variable_examples")]:
+        with pytest.raises(ToolError, match=msg):
+            call("create_whatsapp_template", bad, keys["rw"], monkeypatch)
+    with pytest.raises(ToolError, match="'write' permission"):
+        call("create_whatsapp_template", {"name": "ok_name", "body": "a b"}, keys["ro"], monkeypatch)
+
+    with pytest.raises(ToolError, match="'send' permission"):
+        call("submit_whatsapp_template", {"sid": "HXbbb", "category": "UTILITY"}, keys["rw"], monkeypatch)
+    with pytest.raises(ToolError, match="already submitted"):
+        call("submit_whatsapp_template", {"sid": "HXaaa", "category": "UTILITY"}, sk, monkeypatch)
+    with pytest.raises(ToolError, match="MARKETING or UTILITY"):
+        call("submit_whatsapp_template", {"sid": "HXbbb", "category": "AUTH"}, sk, monkeypatch)
+    sub = call("submit_whatsapp_template", {"sid": "HXbbb", "category": "utility"}, sk, monkeypatch)
+    assert sub["status"] == "received" and sub["name"] == "draft_one" and sub["category"] == "UTILITY"
+    assert twilio.calls[-1][1].endswith("/Content/HXbbb/ApprovalRequests/whatsapp")
+
+
+def test_campaign_accepts_template_name(keys, twilio, monkeypatch):
+    c = call("create_campaign", {"name": "WA by name", "channel": "whatsapp",
+                                 "steps": [{"name": "Hello", "wa_template": "Approved_One", "body": "{{first_name|there}}"}]},
+             keys["rw"], monkeypatch)
+    assert "HXaaa" in json.dumps(c)
+    with pytest.raises(ToolError, match="No single Twilio template"):
+        call("create_campaign", {"name": "WA missing", "channel": "whatsapp",
+                                 "steps": [{"wa_template": "nope"}]}, keys["rw"], monkeypatch)
+
+
+# ---------------------------------------------------------------------- saved templates (Templates page)
+
+def test_template_tools(keys, twilio, monkeypatch):
+    e = call("create_template", {"name": "Quote chaser", "subject": "Your quote", "body": "Hi {{first_name|there}},\n\nQuote attached."},
+             keys["rw"], monkeypatch)
+    assert e["channel"] == "email" and e["subject"] == "Your quote" and e["wa_template"] is None
+    with pytest.raises(ToolError, match="already exists"):
+        call("create_template", {"name": "quote CHASER", "body": "x"}, keys["rw"], monkeypatch)
+    with pytest.raises(ToolError, match="needs a body"):
+        call("create_template", {"name": "Empty"}, keys["rw"], monkeypatch)
+
+    w = call("create_template", {"name": "WA by name", "channel": "whatsapp", "wa_template": "approved_one",
+                                 "body": "{{first_name|there}}"}, keys["rw"], monkeypatch)
+    assert w["wa_template"] == "HXaaa" and w["language"] == "en_US"        # name resolved to the Content SID
+    with pytest.raises(ToolError, match="needs wa_template"):
+        call("create_template", {"name": "WA none", "channel": "whatsapp"}, keys["rw"], monkeypatch)
+    with pytest.raises(ToolError, match="No single Twilio template"):
+        call("create_template", {"name": "WA bad", "channel": "whatsapp", "wa_template": "nope"}, keys["rw"], monkeypatch)
+
+    u = call("update_template", {"template_id": e["id"], "subject": "Your quote (reminder)"}, keys["rw"], monkeypatch)
+    assert u["subject"] == "Your quote (reminder)" and u["body"] == e["body"] and u["name"] == "Quote chaser"
+    u = call("update_template", {"template_id": w["id"], "wa_template": "HXbbb"}, keys["rw"], monkeypatch)
+    assert u["wa_template"] == "HXbbb" and u["body"] == "{{first_name|there}}"
+    with pytest.raises(ToolError, match="not found"):
+        call("update_template", {"template_id": 999999, "name": "x"}, keys["rw"], monkeypatch)
+
+    found = call("list_templates", {"channel": "whatsapp", "q": "wa by"}, keys["ro"], monkeypatch)
+    assert [t["id"] for t in found["templates"]] == [w["id"]]
+    with pytest.raises(ToolError, match="'write' permission"):
+        call("create_template", {"name": "No", "body": "x"}, keys["ro"], monkeypatch)
+    s = SessionLocal()
+    assert s.query(AuditLog).filter_by(entity_type="template", entity_id=str(e["id"])).count() == 2
+    s.close()

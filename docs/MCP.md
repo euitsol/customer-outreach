@@ -70,7 +70,12 @@ The server must be reachable over HTTPS.
 | `log_activity` | write | Note / call / meeting on a person, company or deal |
 | `list_tasks`, `create_task`, `update_task` | read / write | Follow-ups: open, today, overdue, done |
 | `list_campaigns`, `get_campaign` | read | Campaigns and per-stage funnel |
-| `create_campaign` | write | Create a **draft** email or WhatsApp campaign with its stages (WhatsApp stage = Twilio Content SID + template values) |
+| `create_campaign` | write | Create a **draft** email or WhatsApp campaign with its stages (WhatsApp stage = Twilio template name or Content SID + template values) |
+| `list_templates` | read | Saved templates on the Templates page (email and WhatsApp); filter by channel or text |
+| `create_template`, `update_template` | write | Save / change a template: email subject + body, or WhatsApp Content SID (or Twilio template name) + values. Updates change only the fields given |
+| `list_whatsapp_templates` | read | Twilio WhatsApp templates with sid, body and approval status (approved / pending / rejected...); filter by status |
+| `create_whatsapp_template` | write | Create a draft template in Twilio (`{{1}}` variables + one example each); not yet seen by WhatsApp |
+| `submit_whatsapp_template` | **send** | Send a draft to WhatsApp for approval (MARKETING or UTILITY). It can't be edited afterwards |
 | `enroll_in_campaign` | write | Add people (ids or emails) to a sequence |
 | `set_campaign_status` | **send** | Start / pause / archive a campaign |
 | `list_conversations`, `get_conversation` | read | Inbox threads and messages; WhatsApp 24h window status |

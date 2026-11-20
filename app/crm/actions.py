@@ -7,6 +7,7 @@ and returns plain JSON-able data. They raise:
     PermissionError  - the key lacks the needed scope            (HTTP 403)
 The caller commits.
 """
+import re
 from datetime import datetime
 
 from sqlalchemy import and_, exists, func, or_
@@ -453,6 +454,8 @@ def create_campaign(session, actor, name, channel="email", description=None, dai
         create_default_steps(session, camp)
     for i, st in enumerate(steps or [], start=1):
         sid = (st.get("wa_template") or "").strip() or None
+        if channel == "whatsapp" and sid and not sid.startswith("HX"):
+            sid = resolve_template_sid(sid)
         if channel == "whatsapp" and not (sid and sid.startswith("HX")):
             raise ValueError(f"Stage {i}: a WhatsApp stage needs a Twilio Content SID starting with HX.")
         hours = int(st.get("delay_hours") if st.get("delay_hours") is not None else (st.get("delay_days") or 0) * 24)
@@ -532,6 +535,176 @@ def send_message(session, actor, person_id, channel, body=None, subject=None, co
         session.commit()                      # keep the failed attempt in the thread
         raise ValueError(f"Delivery failed: {e}")
     return {"sent": True, "conversation_id": m.conversation_id, "message": ser.conversation_message(m)}
+
+
+# ---------------------------------------------------------------------- WhatsApp templates (Twilio)
+
+_TEMPLATE_NAME = re.compile(r"^[a-z0-9_]{1,200}$")
+
+
+def list_whatsapp_templates(session, status=None):
+    """Twilio WhatsApp templates with their approval status. `status` filters (approved, pending, rejected...)."""
+    try:
+        rows = whatsapp.list_templates(status)
+    except whatsapp.WhatsAppError as e:
+        raise ValueError(str(e))
+    return {"count": len(rows), "templates": rows}
+
+
+def create_whatsapp_template(session, actor, name, body, language="en", variable_examples=None):
+    """Create an (unsubmitted) Twilio text template. Use {{1}}, {{2}}... in `body`, one example per variable."""
+    from app.crm import audit
+    name, body = (name or "").strip(), (body or "").strip()
+    if not _TEMPLATE_NAME.match(name):
+        raise ValueError("name must use only lowercase letters, numbers and underscores (e.g. generic_follow_up).")
+    if not body:
+        raise ValueError("body is required.")
+    examples = [str(v).strip() for v in (variable_examples or [])]
+    used = sorted({int(n) for n in re.findall(r"\{\{\s*(\d+)\s*\}\}", body)})
+    if used != list(range(1, len(used) + 1)):
+        raise ValueError("Variables in body must be numbered {{1}}, {{2}}, ... with no gaps.")
+    if len(examples) != len(used) or not all(examples):
+        raise ValueError(f"body has {len(used)} variable(s): give exactly that many non-empty variable_examples.")
+    if re.match(r"\{\{\s*\d+\s*\}\}", body) or re.search(r"\{\{\s*\d+\s*\}\}$", body):
+        raise ValueError("WhatsApp rejects a body that starts or ends with a variable: add some text around it.")
+    try:
+        sid = whatsapp.create_template(name, body, (language or "en").strip(), examples)
+    except whatsapp.WhatsAppError as e:
+        raise ValueError(str(e))
+    audit.record(session, actor, "create", "whatsapp_template", sid, {"name": name, "language": language})
+    return {"sid": sid, "name": name, "status": "unsubmitted",
+            "next": "Show the user the text, then submit it for WhatsApp approval with submit_whatsapp_template."}
+
+
+def submit_whatsapp_template(session, actor, sid, category, whatsapp_name=None):
+    """Submit a template to WhatsApp for approval (category MARKETING or UTILITY). Outward: needs `send`."""
+    from app.crm import audit
+    sid, category = (sid or "").strip(), (category or "").upper()
+    if not sid.startswith("HX"):
+        raise ValueError("sid must be a Twilio Content SID starting with HX.")
+    if category not in whatsapp.TEMPLATE_CATEGORIES:
+        raise ValueError("category must be MARKETING or UTILITY.")
+    try:
+        tpl = next((t for t in whatsapp.list_templates() if t["sid"] == sid), None)
+    except whatsapp.WhatsAppError as e:
+        raise ValueError(str(e))
+    if tpl is None:
+        raise ValueError(f"Template {sid} not found in Twilio.")
+    if tpl["status"] != "unsubmitted":
+        raise ValueError(f"Template {tpl['name']} was already submitted (status: {tpl['status']}).")
+    wa_name = (whatsapp_name or tpl["name"] or "").strip()
+    if not _TEMPLATE_NAME.match(wa_name):
+        raise ValueError("whatsapp_name must use only lowercase letters, numbers and underscores.")
+    try:
+        res = whatsapp.submit_template(sid, wa_name, category)
+    except whatsapp.WhatsAppError as e:
+        raise ValueError(str(e))
+    audit.record(session, actor, "submit", "whatsapp_template", sid, {"name": wa_name, "category": category})
+    return {"sid": sid, **res}
+
+
+def resolve_template_sid(value):
+    """A Content SID as given, or look a template up by its friendly name (so people don't need the SID)."""
+    value = (value or "").strip()
+    if not value or value.startswith("HX"):
+        return value or None
+    try:
+        hits = [t for t in whatsapp.list_templates() if (t["name"] or "").lower() == value.lower()]
+    except whatsapp.WhatsAppError as e:
+        raise ValueError(str(e))
+    if len(hits) != 1:
+        raise ValueError(f"No single Twilio template is named {value!r}; use list_whatsapp_templates for the SID."
+                         if not hits else f"{len(hits)} Twilio templates are named {value!r}; use its SID (HX...).")
+    return hits[0]["sid"]
+
+
+# ---------------------------------------------------------------------- saved templates (Templates page)
+
+def _template_view(t):
+    meta = t.meta or {}
+    return {"id": t.id, "name": t.name, "channel": t.channel, "subject": t.subject, "body": t.body,
+            "wa_template": meta.get("wa_template") or None, "language": meta.get("language") or None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None}
+
+
+def list_templates(session, channel=None, q=None):
+    """Saved templates from the Templates page (email snippets and WhatsApp templates by Content SID)."""
+    from app.models import Template
+    if channel and channel not in ("email", "whatsapp"):
+        raise ValueError("channel must be email or whatsapp.")
+    query = session.query(Template)
+    if channel:
+        query = query.filter(Template.channel == channel)
+    if q:
+        like = f"%{q.strip().lower()}%"
+        query = query.filter(or_(func.lower(Template.name).like(like), func.lower(Template.body).like(like)))
+    rows = [_template_view(t) for t in query.order_by(Template.name)]
+    return {"count": len(rows), "templates": rows}
+
+
+def _template_fields(t, name, subject, body, wa_template, language):
+    """Apply the given fields (None = leave unchanged) and validate the result."""
+    if name is not None:
+        t.name = name.strip()
+    if not t.name:
+        raise ValueError("name is required.")
+    if subject is not None:
+        t.subject = subject.strip() or None
+    if body is not None:
+        t.body = body.rstrip() or None
+    meta = dict(t.meta or {})
+    if t.channel == "whatsapp":
+        if wa_template is not None:
+            meta["wa_template"] = resolve_template_sid(wa_template) or ""
+        if language is not None:
+            meta["language"] = language.strip() or "en_US"
+        meta.setdefault("language", "en_US")
+        if not meta.get("wa_template"):
+            raise ValueError("A WhatsApp template needs wa_template: its Twilio Content SID (HX...) or its name "
+                             "(see list_whatsapp_templates).")
+        if not meta["wa_template"].startswith("HX"):
+            raise ValueError("wa_template must be a Twilio Content SID starting with HX.")
+        t.meta = meta
+    else:
+        if not (t.body or "").strip():
+            raise ValueError("An email template needs a body.")
+        t.meta = None
+
+
+def create_template(session, actor, name, channel="email", subject=None, body=None, wa_template=None,
+                    language=None):
+    """Save a template on the Templates page. Email: subject + body (merge fields like {{first_name|there}}).
+    WhatsApp: wa_template (Twilio Content SID or name) and optional body (the values, separated by |)."""
+    from app.crm import audit
+    from app.models import Template
+    if channel not in ("email", "whatsapp"):
+        raise ValueError("channel must be email or whatsapp.")
+    if not (name or "").strip():
+        raise ValueError("name is required.")
+    if session.query(Template).filter(func.lower(Template.name) == name.strip().lower(),
+                                      Template.channel == channel).first():
+        raise ValueError(f"A {channel} template named {name.strip()!r} already exists: use update_template.")
+    t = Template(channel=channel)
+    _template_fields(t, name, subject, body, wa_template, language)
+    session.add(t)
+    session.flush()
+    audit.record(session, actor, "create", "template", t.id, {"name": t.name, "channel": channel, "via": "api"})
+    return _template_view(t)
+
+
+def update_template(session, actor, template_id, name=None, subject=None, body=None, wa_template=None,
+                    language=None):
+    """Change a saved template; only the fields you pass change. Campaign stages that already loaded it keep
+    their copy."""
+    from app.crm import audit
+    from app.models import Template
+    t = _get(session, Template, template_id, "Template")
+    before = _template_view(t)
+    _template_fields(t, name, subject, body, wa_template, language)
+    after = _template_view(t)
+    changed = {k: [before[k], after[k]] for k in after if k != "updated_at" and before[k] != after[k]}
+    audit.record(session, actor, "update", "template", t.id, changed or None)
+    return after
 
 
 # ---------------------------------------------------------------------- overview

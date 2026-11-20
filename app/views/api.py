@@ -220,6 +220,53 @@ def tasks_update(sess, tid):
     return actions.update_task(sess, g.api_actor, tid, body())
 
 
+# ------------------------------------------------------------------ saved templates
+
+@bp.route("/templates")
+@endpoint()
+def templates_list(sess):
+    return actions.list_templates(sess, arg("channel"), arg("q"))
+
+
+@bp.route("/templates", methods=["POST"])
+@endpoint("write")
+def templates_create(sess):
+    b = body()
+    return actions.create_template(sess, g.api_actor, b.get("name"), b.get("channel") or "email", b.get("subject"),
+                                   b.get("body"), b.get("wa_template"), b.get("language")), 201
+
+
+@bp.route("/templates/<int:tid>", methods=["PATCH", "PUT"])
+@endpoint("write")
+def templates_update(sess, tid):
+    b = body()
+    return actions.update_template(sess, g.api_actor, tid, b.get("name"), b.get("subject"), b.get("body"),
+                                   b.get("wa_template"), b.get("language"))
+
+
+# ------------------------------------------------------------------ WhatsApp templates
+
+@bp.route("/whatsapp-templates")
+@endpoint()
+def wa_templates_list(sess):
+    return actions.list_whatsapp_templates(sess, arg("status"))
+
+
+@bp.route("/whatsapp-templates", methods=["POST"])
+@endpoint("write")
+def wa_templates_create(sess):
+    b = body()
+    return actions.create_whatsapp_template(sess, g.api_actor, b.get("name"), b.get("body"),
+                                            b.get("language") or "en", b.get("variable_examples")), 201
+
+
+@bp.route("/whatsapp-templates/<sid>/submit", methods=["POST"])
+@endpoint("send")
+def wa_templates_submit(sess, sid):
+    b = body()
+    return actions.submit_whatsapp_template(sess, g.api_actor, sid, b.get("category"), b.get("whatsapp_name"))
+
+
 # ------------------------------------------------------------------ campaigns
 
 @bp.route("/campaigns")

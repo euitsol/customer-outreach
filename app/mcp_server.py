@@ -326,8 +326,9 @@ async def get_campaign(campaign_id: int, ctx: Context) -> dict:
 async def create_campaign(name: str, ctx: Context, channel: str = "email", description: str | None = None,
                           daily_limit: int | None = None, steps: list[dict] | None = None) -> dict:
     """Create a DRAFT campaign (nothing is sent). channel: email | whatsapp. steps: [{name, delay_days or
-    delay_hours, subject, body, wa_template}]. A WhatsApp stage needs wa_template = the approved Twilio Content SID
-    (HX...) and puts its template values in body, separated by | (e.g. "{{first_name|there}} | {{company}}").
+    delay_hours, subject, body, wa_template}]. A WhatsApp stage needs wa_template = the approved Twilio template
+    (its name from list_whatsapp_templates, or its Content SID HX...) and puts its template values in body,
+    separated by | (e.g. "{{first_name|there}} | {{company}}").
     Omit steps for the default three email stages. Enroll people with enroll_in_campaign; starting it is
     set_campaign_status."""
     return await run(ctx, "write", actions.create_campaign, name, channel, description, daily_limit, steps)
@@ -376,6 +377,63 @@ async def send_message(person_id: int, channel: str, ctx: Context, body: str | N
     permission."""
     return await run(ctx, "send", actions.send_message, person_id, channel, body, subject, conversation_id,
                      template, template_language, template_params, mailbox_id)
+
+
+# ---------------------------------------------------------------------- saved templates
+
+@server.tool(annotations=READ)
+async def list_templates(ctx: Context, channel: str | None = None, q: str | None = None) -> dict:
+    """The saved templates on the CRM's Templates page (id, name, channel, subject, body, WhatsApp Content SID).
+    channel: email | whatsapp. q searches name and body. Look here before creating one."""
+    return await run(ctx, "read", actions.list_templates, channel, q)
+
+
+@server.tool(annotations=WRITE)
+async def create_template(name: str, ctx: Context, channel: str = "email", subject: str | None = None,
+                          body: str | None = None, wa_template: str | None = None,
+                          language: str | None = None) -> dict:
+    """Save a new template on the Templates page (nothing is sent). Email: subject + body, merge fields like
+    {{first_name|there}} or {{company}}. WhatsApp: wa_template = the approved Twilio template's name or Content SID
+    (HX...) - see list_whatsapp_templates - and body = its values separated by | (e.g. "{{first_name|there}} |
+    {{company}}"). Refuses a duplicate name on the same channel."""
+    return await run(ctx, "write", actions.create_template, name, channel, subject, body, wa_template, language)
+
+
+@server.tool(annotations=WRITE)
+async def update_template(template_id: int, ctx: Context, name: str | None = None, subject: str | None = None,
+                          body: str | None = None, wa_template: str | None = None,
+                          language: str | None = None) -> dict:
+    """Change a saved template; only the fields you pass change. Campaign stages that already loaded the template
+    keep their own copy."""
+    return await run(ctx, "write", actions.update_template, template_id, name, subject, body, wa_template, language)
+
+
+# ---------------------------------------------------------------------- WhatsApp templates
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
+async def list_whatsapp_templates(ctx: Context, status: str | None = None) -> dict:
+    """The Twilio WhatsApp templates (sid, name, language, body, category, approval status, rejection reason),
+    newest first. status filters: approved | pending | received | rejected | paused | unsubmitted. Use the `sid`
+    (HX...) or the template name as `wa_template` in create_campaign."""
+    return await run(ctx, "read", actions.list_whatsapp_templates, status)
+
+
+@server.tool(annotations=OUTWARD)
+async def create_whatsapp_template(name: str, body: str, ctx: Context, language: str = "en",
+                                   variable_examples: list[str] | None = None) -> dict:
+    """Create a WhatsApp text template in Twilio. It stays a draft (WhatsApp has not seen it) until
+    submit_whatsapp_template. name: lowercase letters, numbers, underscores. body: use {{1}}, {{2}}... for
+    values (the CRM fills them in order); give one example per variable; the body must not start or end with a
+    variable. Show the user the final text first."""
+    return await run(ctx, "write", actions.create_whatsapp_template, name, body, language, variable_examples)
+
+
+@server.tool(annotations=OUTWARD)
+async def submit_whatsapp_template(sid: str, category: str, ctx: Context, whatsapp_name: str | None = None) -> dict:
+    """Submit a draft template (its Content SID) to WhatsApp for approval. category: MARKETING | UTILITY.
+    A submitted template can't be edited and may take minutes to days to be approved or rejected; check
+    list_whatsapp_templates later. Only do this when the user asked. Requires the 'send' permission."""
+    return await run(ctx, "send", actions.submit_whatsapp_template, sid, category, whatsapp_name)
 
 
 # ---------------------------------------------------------------------- prompts

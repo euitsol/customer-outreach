@@ -19,7 +19,7 @@ You can connect Claude (Claude Desktop, Claude Code or claude.ai) to the CRM. Cl
 |---|---|
 | `read` | search and view people, companies, deals, tasks, campaigns, conversations |
 | `write` | create and update people, companies, deals, tasks; log notes; merge people; enroll in campaigns |
-| `send` | email or WhatsApp people, start, pause or archive campaigns: things that reach real people |
+| `send` | email or WhatsApp people, start, pause or archive campaigns, submit WhatsApp templates for approval: things that reach real people |
 
 3. Optionally set **Expires after (days)**.
 4. **Copy the key now. It is shown only once.**

@@ -19,6 +19,10 @@ Email templates can be loaded into campaign stages ([Campaigns](/help/campaigns)
 
 WhatsApp only lets you start a conversation (or write after 24 hours of silence) with a template that WhatsApp has **approved**. Create it in Twilio (Content Template Builder) first, then register it here: enter its **Twilio Content SID** (starts with `HX`). The Language field is not used.
 
+With an API key that has `read` + `write`, Claude can also list, create and edit the templates on this page ("save an email template for a quote follow-up"). It shows you the text first and nothing is sent.
+
+**Let Claude do it.** With an API key that has `read` + `write` (and `send` to submit), ask Claude to "show my WhatsApp templates and their approval status" or "create a WhatsApp template for a quote follow-up". Claude makes a draft in Twilio, shows you the text and, only if you ask, submits it to WhatsApp. Approval can take minutes to days. When you create a campaign through Claude you can give the template's name instead of the SID ([API keys & Claude](/help/api-keys)).
+
 ## Good to know
 
 Changing a template does not change campaigns that already loaded it; the text was copied into the stage.

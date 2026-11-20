@@ -19,7 +19,7 @@ Claude (Claude Desktop, Claude Code বা claude.ai) সিআরএমের �
 |---|---|
 | `read` | person, company, deal, টাস্ক, ক্যাম্পেইন ও কথোপকথন খোঁজা ও দেখা |
 | `write` | person, company, deal, টাস্ক তৈরি ও হালনাগাদ; নোট লেখা; মানুষ merge করা; ক্যাম্পেইনে enroll করা |
-| `send` | মানুষকে ইমেইল বা WhatsApp পাঠানো, ক্যাম্পেইন শুরু, pause বা archive করা: যা আসল মানুষের কাছে পৌঁছায় |
+| `send` | মানুষকে ইমেইল বা WhatsApp পাঠানো, ক্যাম্পেইন শুরু, pause বা archive করা, WhatsApp template অনুমোদনের জন্য জমা দেওয়া: যা আসল মানুষের কাছে পৌঁছায় |
 
 3. চাইলে **Expires after (days)** দিন।
 4. **key এখনই কপি করুন। এটি শুধু একবারই দেখানো হয়।**

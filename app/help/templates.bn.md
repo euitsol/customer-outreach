@@ -19,6 +19,10 @@
 
 WhatsApp-এ কথোপকথন শুরু করতে (বা ২৪ ঘণ্টা চুপ থাকার পর লিখতে) WhatsApp-এর **অনুমোদিত** template লাগে। আগে Twilio-তে (Content Template Builder) সেটি তৈরি করুন, তারপর এখানে নিবন্ধন করুন: এর **Twilio Content SID** (`HX` দিয়ে শুরু) দিন। Language ঘরটি ব্যবহৃত হয় না।
 
+`read` + `write` আছে এমন API key থাকলে Claude এই পাতার template-গুলো দেখাতে, বানাতে ও বদলাতে পারে ("quote follow-up-এর জন্য একটি ইমেইল template সেভ করো")। আগে লেখাটি আপনাকে দেখায়, কিছু পাঠানো হয় না।
+
+**Claude-কে দিয়ে করান।** `read` + `write` (জমা দিতে `send`) আছে এমন API key থাকলে Claude-কে বলুন "আমার WhatsApp template ও অনুমোদনের অবস্থা দেখাও" বা "quote follow-up-এর জন্য একটি WhatsApp template বানাও"। Claude Twilio-তে একটি খসড়া বানায়, লেখাটি আপনাকে দেখায় এবং আপনি বললেই কেবল WhatsApp-এ অনুমোদনের জন্য জমা দেয়। অনুমোদনে কয়েক মিনিট থেকে কয়েক দিন লাগতে পারে। Claude দিয়ে ক্যাম্পেইন বানালে SID-এর বদলে template-এর নাম দিলেই চলে ([API keys & Claude](/help/api-keys))।
+
 ## জেনে রাখুন
 
 template বদলালে যেসব ক্যাম্পেইন আগেই সেটি লোড করেছে তাদের লেখা বদলায় না, কারণ লেখাটি stage-এ কপি হয়ে গেছে।

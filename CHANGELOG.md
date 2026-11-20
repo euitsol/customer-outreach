@@ -8,6 +8,13 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **Saved templates from the API and MCP**: `list_templates`, `create_template` and `update_template` (REST:
+  `/api/v1/templates`) manage the Templates page, so Claude can save an email template or register a WhatsApp
+  template by Twilio name or Content SID.
+- **Twilio WhatsApp templates from the API and MCP**: `list_whatsapp_templates` shows every template with its
+  approval status, `create_whatsapp_template` makes a draft and `submit_whatsapp_template` (needs the `send`
+  permission) sends it to WhatsApp for approval; REST: `/api/v1/whatsapp-templates`. `create_campaign` now also
+  accepts a template name instead of its Content SID.
 - **Daily phone-number check**: the WhatsApp worker checks up to 50 new numbers a day with Twilio Lookup v2,
   numbers in WhatsApp campaigns first. The limit and an optional paid line-type check (about $0.008 per number)
   are set under Settings > WhatsApp number check (`manage check-phones` runs it now). People get a status tag:

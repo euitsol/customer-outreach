@@ -116,3 +116,78 @@ def parse_webhook(payload):
                          "name": p.get("ProfileName"), "timestamp": utcnow(), "text": text,
                          "type": "media" if int(p.get("NumMedia") or 0) > 0 else "text",
                          "context_id": p.get("OriginalRepliedMessageSid"), "raw": dict(p)})]
+
+
+# ---------------------------------------------------------------------- templates (Twilio Content API)
+#
+# List:   GET  https://content.twilio.com/v1/ContentAndApprovals   (templates + their WhatsApp approval)
+# Create: POST https://content.twilio.com/v1/Content               (JSON; a draft, not yet shown to Meta)
+# Submit: POST https://content.twilio.com/v1/Content/<HX...>/ApprovalRequests/whatsapp   (JSON; Meta reviews it)
+
+CONTENT_API = "https://content.twilio.com/v1"
+TEMPLATE_CATEGORIES = ("MARKETING", "UTILITY")
+
+
+def _content(method, path, json_body=None, client=None):
+    if not (config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN):
+        raise WhatsAppError("Twilio is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN).")
+    url = path if path.startswith("http") else f"{CONTENT_API}{path}"
+    auth = (config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN)
+    try:
+        if client is not None:
+            resp = client.request(method, url, json=json_body, auth=auth)
+        else:
+            with httpx.Client(timeout=30) as c:
+                resp = c.request(method, url, json=json_body, auth=auth)
+    except httpx.HTTPError as e:
+        raise WhatsAppError(f"Could not reach Twilio: {e}")
+    try:
+        body = resp.json()
+    except ValueError:
+        body = {}
+    if resp.status_code >= 400:
+        raise WhatsAppError(f"Twilio error {body.get('code') or resp.status_code}: "
+                            f"{body.get('message') or 'request failed'}",
+                            code=body.get("code"), permanent=resp.status_code in (400, 401, 403, 404))
+    return body
+
+
+def _template_view(c):
+    """One Content record (from ContentAndApprovals) as plain data."""
+    wa = (c.get("approval_requests") or {})
+    types = c.get("types") or {}
+    body = next((t.get("body") for t in types.values() if isinstance(t, dict) and t.get("body")), None)
+    return {"sid": c.get("sid"), "name": c.get("friendly_name"), "language": c.get("language"),
+            "status": wa.get("status") or "unsubmitted", "category": wa.get("category"),
+            "whatsapp_name": wa.get("name"), "rejection_reason": wa.get("rejection_reason") or None,
+            "body": body, "variables": c.get("variables") or {}, "created": c.get("date_created")}
+
+
+def list_templates(status=None, client=None):
+    """Every Twilio Content template with its WhatsApp approval status (approved | pending | received |
+    rejected | paused | disabled | unsubmitted), newest first."""
+    out, url = [], f"{CONTENT_API}/ContentAndApprovals?PageSize=100"
+    while url and len(out) < 1000:
+        data = _content("GET", url, client=client)
+        out += [_template_view(c) for c in data.get("contents", [])]
+        url = (data.get("meta") or {}).get("next_page_url")
+    if status:
+        out = [t for t in out if t["status"] == status.lower()]
+    return sorted(out, key=lambda t: t["created"] or "", reverse=True)
+
+
+def create_template(name, body, language="en", variable_examples=None, client=None):
+    """Create a text template (a draft: WhatsApp has not seen it yet). `body` uses {{1}}, {{2}}... and every
+    variable needs an example value (Meta reviews those). Returns the new Content SID."""
+    payload = {"friendly_name": name, "language": language,
+               "variables": {str(i): str(v) for i, v in enumerate(variable_examples or [], 1)},
+               "types": {"twilio/text": {"body": body}}}
+    return _content("POST", "/Content", payload, client=client)["sid"]
+
+
+def submit_template(sid, whatsapp_name, category, client=None):
+    """Send a template to WhatsApp for approval. It can't be edited afterwards; approval takes minutes to days."""
+    body = _content("POST", f"/Content/{sid}/ApprovalRequests/whatsapp",
+                    {"name": whatsapp_name, "category": category}, client=client)
+    return {"status": body.get("status") or "received", "category": body.get("category") or category,
+            "name": body.get("name") or whatsapp_name}
