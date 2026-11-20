@@ -349,13 +349,15 @@ def timeline(session, person, limit=100):
                           "title": f"Campaign email {ev.type}" + (f" (stage {ev.stage})" if ev.stage else ""),
                           "body": ev.detail if ev.type in ("sent", "failed", "bounced", "clicked") else None,
                           "campaign": c, "enrollment_id": ev.enrollment_id})
+    from app.crm.conversations import display_body
     for m in (session.query(ConversationMessage).join(Conversation)
               .filter(Conversation.person_id == person.id, ConversationMessage.sequence_message_id.is_(None))
               .order_by(ConversationMessage.id.desc()).limit(limit)):
         items.append({"when": m.sent_at or m.created_at, "kind": f"{m.channel}_{m.direction}",
                       "title": f"{m.channel.capitalize()} {'received' if m.direction == 'in' else 'sent'}"
                                + (f": {m.subject}" if m.subject else ""),
-                      "body": m.body, "conversation_id": m.conversation_id, "status": m.status})
+                      "body": display_body(m), "conversation_id": m.conversation_id, "status": m.status,
+                      "template": (m.meta or {}).get("template_name") or (m.meta or {}).get("template")})
     for t in session.query(Task).filter(Task.person_id == person.id).order_by(Task.id.desc()).limit(limit):
         items.append({"when": t.completed_at or t.created_at, "kind": "task",
                       "title": ("Task done: " if t.status == "done" else "Task: ") + t.title, "body": t.notes,

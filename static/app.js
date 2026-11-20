@@ -207,6 +207,62 @@
     sync();
   });
 
+  /* WhatsApp template composer: pick a template -> one input per variable + live preview */
+  $$("form[data-channel-form]").forEach(form => {
+    const box = $("[data-wa-fields]", form);
+    if (!box) return;
+    const sel = $("select[name=wa_template]", form), sid = $("input[name=wa_sid]", form);
+    let info = null, seq = 0;
+    const clear = () => { box.replaceChildren(); box.classList.add("hidden"); info = null; };
+    const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+    const preview = () => {
+      const p = $(".wa-preview-text", box); if (!p || !info) return;
+      const vals = $$("input[name=wa_param]", box).map(i => i.value.trim());
+      p.textContent = info.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => vals[n - 1] || "[value " + n + "]");
+    };
+    const build = d => {
+      info = d; box.replaceChildren();
+      d.fields.forEach(f => {
+        const wrap = el("label", "wa-field"), hint = el("span", "wa-hint");
+        hint.append(el("b", "", "Value " + f.n), document.createTextNode("   " + (f.before ? "…" + f.before : "") + "▢" + (f.after ? f.after + "…" : "")));
+        const inp = el("input"); inp.type = "text"; inp.name = "wa_param"; inp.value = f.default || "";
+        inp.placeholder = f.example ? "e.g. " + f.example : "Value " + f.n;
+        wrap.append(hint, inp); box.append(wrap);
+      });
+      const pv = el("div", "wa-preview");
+      pv.append(el("small", "", "Preview of the message (" + (d.name || d.sid) + ")"), el("div", "wa-preview-text"));
+      box.append(pv); box.classList.remove("hidden"); preview();
+    };
+    const load = async value => {
+      const mine = ++seq; value = (value || "").trim();
+      if (!/^HX/.test(value)) { clear(); return; }
+      box.classList.remove("hidden"); box.replaceChildren(el("div", "wa-note", "Loading the template…"));
+      try {
+        const r = await fetch("/inbox/wa-template/" + encodeURIComponent(value) + ".json?person_id=" + encodeURIComponent(form.dataset.personId || ""));
+        const d = await r.json();
+        if (mine !== seq) return;
+        if (!r.ok) throw new Error(d.error || "failed");
+        build(d);
+      } catch (err) {
+        if (mine !== seq) return;
+        info = null;
+        box.replaceChildren(el("div", "wa-note", "Could not load this template's text from Twilio. Enter its values in order, one per box."));
+        const add = el("button", "btn btn-sm", "+ Add value"); add.type = "button";
+        const more = () => { const i = el("input"); i.type = "text"; i.name = "wa_param"; i.placeholder = "Value " + ($$("input[name=wa_param]", box).length + 1); box.insertBefore(i, add); };
+        add.addEventListener("click", more); box.append(add); more();
+      }
+    };
+    form.addEventListener("input", e => { if (e.target.name === "wa_param") preview(); });
+    if (sel) sel.addEventListener("change", () => { if (sid && sel.value) sid.value = ""; load(sel.value); });
+    if (sid) sid.addEventListener("change", () => { if (sid.value.trim() && sel) sel.value = ""; load(sid.value); });
+    form.addEventListener("submit", e => {
+      const hasTemplate = (sel && sel.value) || (sid && sid.value.trim());
+      if (hasTemplate && box.offsetParent !== null && $$("input[name=wa_param]", box).some(i => !i.value.trim())) {
+        e.preventDefault(); alert("Fill in every template value first.");
+      }
+    });
+  });
+
   /* kanban drag & drop: POST /deals/<id>/move */
   let dragged = null;
   document.addEventListener("dragstart", e => {
@@ -258,7 +314,7 @@
       const body = $("textarea[name=body]", form), subj = $("input[name=subject]", form);
       if (d.channel === "whatsapp" && d.meta && d.meta.wa_template) {
         const t = $("select[name=wa_template]", form);
-        if (t) { let o = Array.from(t.options).find(x => x.value === d.meta.wa_template); if (!o) { o = new Option(d.meta.wa_template, d.meta.wa_template); t.add(o); } t.value = d.meta.wa_template; }
+        if (t) { let o = Array.from(t.options).find(x => x.value === d.meta.wa_template); if (!o) { o = new Option(d.meta.wa_template, d.meta.wa_template); t.add(o); } t.value = d.meta.wa_template; t.dispatchEvent(new Event("change", { bubbles: true })); }
         const l = $("input[name=wa_language]", form); if (l && d.meta.language) l.value = d.meta.language;
       }
       if (body && d.body) body.value = d.body;

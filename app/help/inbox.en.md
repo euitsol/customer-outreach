@@ -21,7 +21,7 @@ The inbox is where you answer people. Replies to your campaign emails and incomi
 
 ## WhatsApp's 24-hour rule
 
-You can send free text only within 24 hours of the person's last message. After that WhatsApp requires an **approved template**, created and approved in Twilio and registered (by its Content SID) under [Templates](/help/templates) with channel WhatsApp. The composer tells you which applies. Values for the template's placeholders go in "template values", separated by `|`.
+You can send free text only within 24 hours of the person's last message. After that WhatsApp requires an **approved template**, created and approved in Twilio and registered (by its Content SID) under [Templates](/help/templates) with channel WhatsApp. The composer tells you which applies. When you pick a template, the composer shows **one box per value**, each with a hint of where it goes in the text (and Twilio's example). Known values such as the first name are filled in for you. A live preview shows exactly what the person will get, and every box must be filled. The thread then shows the **actual message sent**, with the template name and SID in small text underneath.
 
 ## Good to know
 

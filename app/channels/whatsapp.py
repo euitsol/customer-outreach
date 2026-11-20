@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 
 import httpx
 
@@ -128,7 +129,7 @@ CONTENT_API = "https://content.twilio.com/v1"
 TEMPLATE_CATEGORIES = ("MARKETING", "UTILITY")
 
 
-def _content(method, path, json_body=None, client=None):
+def _content(method, path, json_body=None, client=None, timeout=30):
     if not (config.TWILIO_ACCOUNT_SID and config.TWILIO_AUTH_TOKEN):
         raise WhatsAppError("Twilio is not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN).")
     url = path if path.startswith("http") else f"{CONTENT_API}{path}"
@@ -137,7 +138,7 @@ def _content(method, path, json_body=None, client=None):
         if client is not None:
             resp = client.request(method, url, json=json_body, auth=auth)
         else:
-            with httpx.Client(timeout=30) as c:
+            with httpx.Client(timeout=timeout) as c:
                 resp = c.request(method, url, json=json_body, auth=auth)
     except httpx.HTTPError as e:
         raise WhatsAppError(f"Could not reach Twilio: {e}")
@@ -191,3 +192,34 @@ def submit_template(sid, whatsapp_name, category, client=None):
                     {"name": whatsapp_name, "category": category}, client=client)
     return {"status": body.get("status") or "received", "category": body.get("category") or category,
             "name": body.get("name") or whatsapp_name}
+
+
+_VAR = re.compile(r"\{\{\s*(\d+)\s*\}\}")
+_TEMPLATE_CACHE = {}
+
+
+def template_variables(body):
+    """The variable numbers a template body uses, in order: [1, 2, 3]."""
+    return sorted({int(n) for n in _VAR.findall(body or "")})
+
+
+def render_text(body, params):
+    """The template body with {{1}}, {{2}}... replaced by `params` (a missing value stays as {{n}})."""
+    def repl(m):
+        i = int(m.group(1)) - 1
+        return str(params[i]) if 0 <= i < len(params or []) else m.group(0)
+    return _VAR.sub(repl, body or "")
+
+
+def fetch_template(sid, client=None, timeout=8):
+    """One template's text and variable examples: {sid, name, language, body, variables}. A template can't be
+    edited once submitted, so a successful lookup is remembered for the life of the process."""
+    if sid in _TEMPLATE_CACHE:
+        return _TEMPLATE_CACHE[sid]
+    c = _content("GET", f"/Content/{sid}", client=client, timeout=timeout)
+    types = c.get("types") or {}
+    body = next((t.get("body") for t in types.values() if isinstance(t, dict) and t.get("body")), None)
+    info = {"sid": c.get("sid") or sid, "name": c.get("friendly_name"), "language": c.get("language"),
+            "body": body, "variables": c.get("variables") or {}}
+    _TEMPLATE_CACHE[sid] = info
+    return info

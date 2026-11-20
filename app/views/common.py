@@ -132,3 +132,12 @@ def form_date(name, source=None):
         return datetime.strptime(v, "%Y-%m-%d").date() if v else None
     except ValueError:
         return None
+
+
+def wa_values(form):
+    """WhatsApp template values from the composer: one `wa_param` field per variable, in order (empty ones are
+    kept so positions don't shift). Older forms sent `wa_params` separated by |."""
+    values = [v.strip() for v in form.getlist("wa_param")]
+    if not values and form.get("wa_params"):
+        values = [v.strip() for v in form["wa_params"].split("|") if v.strip()]
+    return values

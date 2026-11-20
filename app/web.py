@@ -129,6 +129,13 @@ def f_delay(hours):
     return " ".join(p for p in (f"{d}d" if d else "", f"{h}h" if h else "") if p)
 
 
+@app.template_filter("msg_text")
+def f_msg_text(m):
+    """A conversation message's text as the person saw it (template messages show the filled-in template)."""
+    from app.crm.conversations import display_body
+    return display_body(m)
+
+
 @app.template_filter("nl2br")
 def f_nl2br(text):
     return Markup("<br>").join(escape(line) for line in (text or "").splitlines())

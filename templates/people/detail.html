@@ -35,7 +35,7 @@
       <div class="card-head"><h2>Send a message</h2>
         <span class="small muted">{% if not channels.email and not channels.whatsapp %}No channel connected · <a href="{{ url_for('workspace.integrations') }}">set up</a>{% endif %}</span></div>
       <div class="card-body">
-        <form method="post" action="{{ url_for('people.message', person_id=p.id) }}" class="stack" data-channel-form>
+        <form method="post" action="{{ url_for('people.message', person_id=p.id) }}" class="stack" data-channel-form data-person-id="{{ p.id }}">
           {{ csrf_field() }}
           <div class="row">
             <label class="check"><input type="radio" name="channel" value="email" {{ 'checked' if p.email or not p.phone }} {{ 'disabled' if not p.email }}><span>Email{% if not p.email %} <span class="faint">(no address)</span>{% endif %}</span></label>
@@ -50,8 +50,8 @@
               <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in wa_templates %}{% if t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endif %}{% endfor %}</select>
               <input type="text" name="wa_sid" placeholder="or paste Content SID (HX…)" style="max-width:230px" title="Twilio Content SID of an approved template">
               <input type="hidden" name="wa_language" value="en_US">
-              <input type="text" name="wa_params" placeholder="template values: {{ p.first_name or 'Name' }} | …" style="max-width:280px">
             </div>
+            <div class="wa-fields hidden" data-wa-fields></div>
           </div>
           <div class="row"><button class="btn btn-primary" data-once="1">{{ icon('send') }} Send now</button><span class="small muted">Sent immediately from your connected account and logged in the inbox.</span></div>
         </form>
@@ -89,7 +89,7 @@
                 <time title="{{ i.when|dt }}">{{ i.when|ago }}</time>
                 {% if i.activity %}<form method="post" action="{{ url_for('tasks.delete_activity', activity_id=i.activity.id) }}">{{ csrf_field() }}<input type="hidden" name="next" value="{{ here }}#timeline"><button class="btn btn-ghost btn-sm" title="Delete" data-confirm="Remove this entry from the timeline?">&times;</button></form>{% endif %}
               </div>
-              {% if i.body %}<div class="text">{{ i.body|truncate(1200) }}</div>{% endif %}
+              {% if i.body %}<div class="text">{{ i.body|truncate(1200) }}</div>{% endif %}{% if i.template %}<div class="tpl-ref">Template: {{ i.template }}</div>{% endif %}
             </div>
           </li>
         {% else %}<li style="display:block" class="muted">Nothing yet. Log a call, send a message or enroll them in a campaign.</li>{% endfor %}

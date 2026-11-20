@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.services import EnrollError, enroll, enroll_people
 from app.views.common import (
-    actor, back, current_user, db, err, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn,
+    actor, back, current_user, db, err, form_ids, get_or_404, int_arg, ok, paginate, settings_now, warn, wa_values,
 )
 
 bp = Blueprint("people", __name__)
@@ -435,7 +435,7 @@ def message(person_id):
     p = get_or_404(Person, person_id)
     channel = request.form.get("channel") or "email"
     template = (request.form.get("wa_sid") or request.form.get("wa_template") or "").strip() or None
-    params = [x.strip() for x in (request.form.get("wa_params") or "").split("|") if x.strip()]
+    params = wa_values(request.form)
     try:
         m = conv_svc.send(sess, p, channel, request.form.get("body"), subject=request.form.get("subject"),
                           user=current_user(), actor=actor(), template=template,

@@ -50,7 +50,8 @@
       {% for m in thread %}{% set seq = m.sequence_message %}
         <div class="bubble {{ m.direction }} {{ 'failed' if m.status == 'failed' }}">
           {% if m.subject or (seq and seq.sent_subject) %}<div class="subj">{{ m.subject or seq.sent_subject }}</div>{% endif %}
-          <div class="msg-text">{{ m.body or (seq.sent_body if seq else '') or '' }}</div>
+          <div class="msg-text">{{ (m|msg_text) or (seq.sent_body if seq else '') or '' }}</div>
+          {% if m.meta and m.meta.get('template') %}<div class="tpl-ref">Template: {{ m.meta.get('template_name') or '' }} <code>{{ m.meta.get('template') }}</code></div>{% endif %}
           <div class="meta">
             <span>{{ (m.sent_at or m.created_at)|dt }}</span>
             {% if m.sequence_message_id %}<span>campaign email, stage {{ seq.position if seq else '' }}</span>{% endif %}
@@ -62,7 +63,7 @@
     </div>
     <div class="composer">
       {% if current.channel == 'whatsapp' and not wa_window %}<div class="flash warn mb1"><span>More than 24 hours since {{ person.first_name or 'they' }} last wrote: WhatsApp only allows an approved template until they reply.</span></div>{% endif %}
-      <form method="post" action="{{ url_for('inbox.reply', conversation_id=current.id) }}" class="stack" data-channel-form data-channel="{{ current.channel }}">
+      <form method="post" action="{{ url_for('inbox.reply', conversation_id=current.id) }}" class="stack" data-channel-form data-channel="{{ current.channel }}" data-person-id="{{ person.id }}">
         {{ csrf_field() }}<input type="hidden" name="status" value="{{ status }}">
         {% if current.channel == 'email' %}<input type="text" name="subject" placeholder="Subject (blank = Re: last message)">
         {% if mailboxes|length > 1 %}<label class="field"><span class="lbl">Send from</span><select name="mailbox_id"><option value="">Same mailbox as this thread</option>{% for m in mailboxes %}<option value="{{ m.id }}">{{ m.name }} · {{ m.email }}</option>{% endfor %}</select></label>{% endif %}{% endif %}
@@ -72,8 +73,8 @@
           <select name="wa_template" style="max-width:220px"><option value="">{{ 'Free text' if wa_window else 'Choose template…' }}</option>{% for t in templates if t.channel == 'whatsapp' and t.meta and t.meta.get('wa_template') %}<option value="{{ t.meta.get('wa_template') }}" data-lang="{{ t.meta.get('language','en_US') }}">{{ t.name }}</option>{% endfor %}</select>
           <input type="text" name="wa_sid" placeholder="or paste Content SID (HX…)" style="max-width:230px" title="Twilio Content SID of an approved template">
           <input type="hidden" name="wa_language" value="en_US">
-          <input type="text" name="wa_params" placeholder="template values separated by |" style="max-width:260px">
         </div>
+        <div class="wa-fields hidden" data-wa-fields></div>
         {% endif %}
         <div class="row">
           <button class="btn btn-primary" data-once="1">{{ icon('send') }} Send</button>

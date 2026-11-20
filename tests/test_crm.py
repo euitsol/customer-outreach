@@ -14,7 +14,7 @@ from app.crm import apikeys, people as people_svc
 from app.db import SessionLocal
 from app.models import (
     Activity, AuditLog, Campaign, Company, Consent, ContactPoint, Conversation, ConversationMessage, Deal,
-    Enrollment, Person, PipelineStage, Task, User, WebhookEvent,
+    Enrollment, Person, PipelineStage, Task, Template, User, WebhookEvent,
 )
 from app.services import create_default_steps
 from app.web import app
@@ -57,7 +57,13 @@ def wa(monkeypatch):
         calls.append(data)
         return f"SMOUT{len(calls)}"
     monkeypatch.setattr(whatsapp, "_post", fake_post)
+    monkeypatch.setattr(whatsapp, "_TEMPLATE_CACHE", dict(TEMPLATES))      # never call Twilio's Content API
+    monkeypatch.setattr(whatsapp, "_content", lambda *a, **k: (_ for _ in ()).throw(whatsapp.WhatsAppError("offline")))
     return calls
+
+
+TEMPLATES = {"HXtest": {"sid": "HXtest", "name": "email_sent", "language": "en", "variables": {"1": "Kevin", "2": "Sandeep"},
+                        "body": "Hi {{1}}, this is {{2}} from EUITSols. Please check your email."}}
 
 
 def person_by_email(s, email):
@@ -485,3 +491,41 @@ def test_api_campaign_import(client):
     assert again["created"] == 0 and again["updated"] == 2 and again["new_campaign"] is False   # re-run is safe
     s.expire_all()
     assert s.query(Enrollment).filter(Enrollment.campaign_id == camp.id).count() == 2
+
+
+def test_whatsapp_template_shows_real_text_and_one_field_per_value(client, wa):
+    s = SessionLocal()
+    p, _ = people_svc.upsert(s, email="jim@4e.example", phone="+15403085726", first_name="Jim")
+    s.add(Template(name="email_sent", channel="whatsapp", body="{{first_name|there}} | {{sender_name}}",
+                   meta={"wa_template": "HXtest", "language": "en"}))
+    s.commit()
+    pid = p.id
+
+    info = client.get(f"/inbox/wa-template/HXtest.json?person_id={pid}").get_json()
+    assert [f["n"] for f in info["fields"]] == [1, 2]
+    assert info["fields"][0]["default"] == "Jim" and info["fields"][0]["example"] == "Kevin"
+    assert info["fields"][0]["after"].startswith(", this is [2]") and info["fields"][1]["before"].endswith("[1], this is ")
+    assert client.get("/inbox/wa-template/nope.json").status_code == 400
+    assert client.get("/inbox/wa-template/HXmissing.json").status_code == 502
+
+    # an empty value is refused and nothing is sent
+    post(client, f"/people/{pid}/message", channel="whatsapp", wa_template="HXtest", wa_param=["Jim", ""])
+    assert wa == []
+    # one field per value: the thread stores the text the person received, with the template underneath
+    r = post(client, f"/people/{pid}/message", channel="whatsapp", wa_template="HXtest", wa_param=["Jim", "Sandeep"])
+    assert r.status_code == 302 and json.loads(wa[-1]["ContentVariables"]) == {"1": "Jim", "2": "Sandeep"}
+    s.expire_all()
+    m = s.query(ConversationMessage).filter_by(recipient="+15403085726").one()
+    assert m.body == "Hi Jim, this is Sandeep from EUITSols. Please check your email."
+    assert m.meta["template"] == "HXtest" and m.meta["template_name"] == "email_sent"
+    html = client.get(f"/inbox?c={m.conversation_id}&status=all").get_data(as_text=True)
+    assert "Hi Jim, this is Sandeep from EUITSols." in html and "HXtest" in html and "tpl-ref" in html
+
+    # a message stored the old way ("[template HX..] a | b") is shown as the real text too
+    old = ConversationMessage(conversation_id=m.conversation_id, direction="out", channel="whatsapp",
+                              body="[template HXtest] Liam | Al", status="sent", meta={"template": "HXtest"})
+    s.add(old)
+    s.commit()
+    html = client.get(f"/inbox?c={m.conversation_id}&status=all").get_data(as_text=True)
+    assert "Hi Liam, this is Al from EUITSols." in html
+    s.close()

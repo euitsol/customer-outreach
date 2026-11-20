@@ -1,12 +1,17 @@
 """Shared inbox: every email / WhatsApp thread with a person, in one place."""
-from flask import Blueprint, redirect, render_template, request, url_for
+import re
+from types import SimpleNamespace
+
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 from sqlalchemy.orm import selectinload
 
-from app import mailboxes, mailer
+from app import mailboxes, mailer, merge
 from app.channels import whatsapp
 from app.crm import conversations as conv_svc
-from app.models import Conversation, ConversationMessage, Template, User
-from app.views.common import actor, current_user, db, err, get_or_404, int_arg, ok, paginate, settings_now
+from app.models import Conversation, ConversationMessage, Person, Template, User
+from app.views.common import (
+    actor, current_user, db, err, get_or_404, int_arg, ok, paginate, settings_now, wa_values,
+)
 
 bp = Blueprint("inbox", __name__)
 
@@ -60,7 +65,7 @@ def reply(conversation_id):
     sess = db()
     conv = get_or_404(Conversation, conversation_id)
     template = (request.form.get("wa_sid") or request.form.get("wa_template") or "").strip() or None
-    params = [x.strip() for x in (request.form.get("wa_params") or "").split("|") if x.strip()]
+    params = wa_values(request.form)
     try:
         conv_svc.send(sess, conv.person, conv.channel, request.form.get("body"), subject=request.form.get("subject"),
                       conversation=conv, user=current_user(), actor=actor(), template=template,
@@ -92,3 +97,36 @@ def set_status(conversation_id):
         ok(f"Marked {request.form['status']}.")
     sess.commit()
     return redirect(url_for("inbox.index", c=conversation_id, status=request.args.get("back", "open")))
+
+
+@bp.route("/inbox/wa-template/<sid>.json")
+def wa_template_info(sid):
+    """What the composer needs to show one input per template variable: the text around each variable, Twilio's
+    example value and, when `person_id` is given, a suggested value from the person's record and the saved
+    template's merge fields."""
+    if not sid.startswith("HX"):
+        return jsonify(error="That is not a Twilio Content SID (HX...)."), 400
+    info = conv_svc.template_info(sid)
+    if not info or not info["body"]:
+        return jsonify(error="Could not load this template from Twilio."), 502
+    text = info["body"]
+    person = db().get(Person, int_arg("person_id", 0) or 0)
+    saved = next((t for t in db().query(Template).filter(Template.channel == "whatsapp")
+                  if (t.meta or {}).get("wa_template") == sid), None)
+    defaults = []
+    if saved and saved.body:
+        ctx = {}
+        if person is not None:
+            ctx = merge.context_for(SimpleNamespace(person=person, email=person.email, custom_fields={}),
+                                    sender_name=settings_now()["sender_name"])
+        defaults = [merge.render(v.strip(), ctx).strip() for v in saved.body.split("|")]
+    fields = []
+    for n in whatsapp.template_variables(text):
+        # the text around this variable, with the other variables shown as [1], [2]...
+        marked = re.sub(r"\{\{\s*(\d+)\s*\}\}", lambda m: "\x00" if int(m.group(1)) == n else f"[{m.group(1)}]", text)
+        i = marked.index("\x00")
+        fields.append({"n": n, "example": str(info["variables"].get(str(n)) or ""),
+                       "before": marked[max(0, i - 28):i].replace("\x00", ""),
+                       "after": marked[i + 1:i + 29].replace("\x00", ""),
+                       "default": defaults[n - 1] if n <= len(defaults) else ""})
+    return jsonify(sid=sid, name=info["name"], language=info["language"], body=text, fields=fields)

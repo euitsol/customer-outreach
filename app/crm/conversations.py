@@ -239,6 +239,27 @@ def record_campaign_email(session, enrollment, message, subject, external_id, wh
 
 # ---------------------------------------------------------------------- outbound
 
+def template_info(sid):
+    """{name, body, ...} of a Twilio template, or None when Twilio can't be reached / doesn't know it."""
+    try:
+        return whatsapp.fetch_template(sid)
+    except whatsapp.WhatsAppError:
+        return None
+
+
+def display_body(m):
+    """The text of a message as the person saw it. Template messages sent before the text was stored
+    ("[template HX...] a | b") are rebuilt from the template."""
+    body = m.body or ""
+    meta = m.meta or {}
+    if meta.get("template") and body.startswith("[template "):
+        info = template_info(meta["template"])
+        if info and info["body"]:
+            values = body.split("] ", 1)[1].split(" | ") if "] " in body else []
+            return whatsapp.render_text(info["body"], values)
+    return body
+
+
 def whatsapp_window_open(conv, now=None):
     now = now or utcnow()
     return bool(conv.last_inbound_at and now - conv.last_inbound_at < timedelta(hours=whatsapp.SERVICE_WINDOW_HOURS))
@@ -313,7 +334,23 @@ def send(session, person, channel, body, *, subject=None, conversation=None, use
         if not template and not whatsapp_window_open(conv, now):
             raise SendBlocked("More than 24 hours since this person last wrote on WhatsApp: "
                               "send an approved template message instead.")
-        shown = body if not template else f"[template {template}] " + " | ".join(map(str, template_params or []))
+        tpl_meta = None
+        if template:
+            template_params = [str(v).strip() for v in (template_params or [])]
+            info = template_info(template)
+            if info and info["body"]:
+                for n in whatsapp.template_variables(info["body"]):
+                    if n > len(template_params) or not template_params[n - 1]:
+                        raise SendBlocked(f"Fill in value {n} of the template ({info['name'] or template}).")
+                body = whatsapp.render_text(info["body"], template_params)
+                shown = body
+                tpl_meta = {"template": template, "template_name": info["name"], "params": template_params}
+            else:                      # template text unavailable: keep what was sent
+                shown = f"[template {template}] " + " | ".join(template_params)
+                tpl_meta = {"template": template, "params": template_params}
+            tpl_meta["language"] = template_language
+        else:
+            shown = body
         try:
             if template:
                 wamid = whatsapp.send_template(wa_id, template, template_language, template_params)
@@ -322,11 +359,11 @@ def send(session, person, channel, body, *, subject=None, conversation=None, use
         except whatsapp.WhatsAppError as e:
             add_message(session, conv, direction="out", body=shown, recipient=number, status="failed",
                         error=str(e)[:1000], user_id=user.id if user else None, when=now,
-                        meta={"template": template} if template else None)
+                        meta=tpl_meta)
             raise
         m, _ = add_message(session, conv, direction="out", body=shown, recipient=number, status="sent",
                            external_id=wamid, user_id=user.id if user else None, when=now,
-                           meta={"template": template, "language": template_language} if template else None)
+                           meta=tpl_meta)
     else:
         raise SendBlocked(f"Channel '{channel}' is not available yet.")
 

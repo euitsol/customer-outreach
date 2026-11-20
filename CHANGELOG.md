@@ -8,6 +8,11 @@
   registered by Twilio Content SID (`HX...`), and a STOP reply opts the person out of WhatsApp.
 
 ### Added
+- **WhatsApp templates in the composer show one input per value**: on the person page and in the Inbox, picking a
+  template (or pasting a Content SID) loads its text from Twilio and shows a labelled box for each `{{1}}`, `{{2}}`...
+  with the surrounding words and Twilio's example, suggested values from the person and the saved template, and a
+  live preview. Empty values are refused. Threads and the person timeline now show the **real message that was
+  sent** (earlier template messages are rebuilt from the template), with the template name and SID underneath.
 - **Saved templates from the API and MCP**: `list_templates`, `create_template` and `update_template` (REST:
   `/api/v1/templates`) manage the Templates page, so Claude can save an email template or register a WhatsApp
   template by Twilio name or Content SID.
